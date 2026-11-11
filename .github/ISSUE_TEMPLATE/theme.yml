@@ -1,0 +1,17 @@
+name: Tema novo
+description: Proponha um tema
+labels: [theme]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Nome do tema
+    validations:
+      required: true
+  - type: input
+    id: license
+    attributes:
+      label: Licença e origem da paleta
+      description: Link para o projeto original e a licença dele. Paletas sem origem clara não são aceitas.
+    validations:
+      required: true

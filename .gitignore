@@ -1,0 +1,18 @@
+node_modules/
+dist/
+coverage/
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+# local tool caches
+.impeccable/
+.claude/settings.local.json
+# never commit audio, models or binaries
+*.wav
+*.bin
+*.exe
+*.dll
+# secrets
+.env
+.env.*

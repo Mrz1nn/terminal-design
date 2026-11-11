@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Mrz1nn/terminal-design/themes/theme.schema.json",
+  "title": "Terminal-Design theme",
+  "type": "object",
+  "required": [
+    "name",
+    "palette"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,40}$"
+    },
+    "displayName": {
+      "type": "string"
+    },
+    "author": {
+      "type": "string"
+    },
+    "license": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "palette": {
+      "type": "object",
+      "required": [
+        "background",
+        "foreground",
+        "primary",
+        "secondary",
+        "accent",
+        "success",
+        "warning",
+        "error",
+        "muted",
+        "surface"
+      ],
+      "properties": {
+        "background": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "foreground": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "primary": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "secondary": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "accent": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "success": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "warning": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "error": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "muted": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "surface": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ansi": {
+      "type": "object",
+      "properties": {
+        "black": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "red": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "green": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "yellow": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "blue": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "magenta": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "cyan": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "white": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "brightBlack": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "brightRed": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "brightGreen": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "brightYellow": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "brightBlue": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "brightMagenta": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "brightCyan": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "brightWhite": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "style": {
+      "type": "object",
+      "properties": {
+        "bar": {
+          "type": "object",
+          "properties": {
+            "filled": {
+              "type": "string"
+            },
+            "empty": {
+              "type": "string"
+            },
+            "width": {
+              "type": "integer",
+              "minimum": 3,
+              "maximum": 40
+            }
+          }
+        },
+        "separator": {
+          "type": "string"
+        },
+        "groupGap": {
+          "type": "string"
+        },
+        "border": {
+          "enum": [
+            "rounded",
+            "square",
+            "heavy",
+            "double",
+            "ascii",
+            "none"
+          ]
+        },
+        "thresholds": {
+          "type": "object",
+          "properties": {
+            "warning": {
+              "type": "number"
+            },
+            "error": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    }
+  }
+}

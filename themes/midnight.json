@@ -1,0 +1,46 @@
+{
+  "$schema": "./theme.schema.json",
+  "name": "midnight",
+  "displayName": "Midnight",
+  "author": "Terminal-Design",
+  "license": "MIT",
+  "source": "https://github.com/Mrz1nn/terminal-design",
+  "notes": "Tema original do projeto.",
+  "palette": {
+    "background": "#0b0e14",
+    "foreground": "#c9d1d9",
+    "primary": "#7aa2ff",
+    "secondary": "#b38cff",
+    "accent": "#5ee6d0",
+    "success": "#7ee787",
+    "warning": "#f2cc60",
+    "error": "#ff7b72",
+    "muted": "#6e7681",
+    "surface": "#161b22"
+  },
+  "ansi": {
+    "black": "#161b22",
+    "red": "#ff7b72",
+    "green": "#7ee787",
+    "yellow": "#f2cc60",
+    "blue": "#7aa2ff",
+    "magenta": "#b38cff",
+    "cyan": "#5ee6d0",
+    "white": "#c9d1d9",
+    "brightBlack": "#484f58",
+    "brightRed": "#ffa198",
+    "brightGreen": "#a5f0b0",
+    "brightYellow": "#f8e3a1",
+    "brightBlue": "#a5c3ff",
+    "brightMagenta": "#d2b8ff",
+    "brightCyan": "#9cf2e3",
+    "brightWhite": "#f0f6fc"
+  },
+  "style": {
+    "bar": {
+      "filled": "━",
+      "empty": "─"
+    },
+    "border": "rounded"
+  }
+}

@@ -1,0 +1,27 @@
+name: Bug
+description: Algo não funciona como deveria
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: O que aconteceu
+      description: O que você fez, o que esperava e o que aconteceu.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Saída de `td doctor`
+      description: Rode `td doctor` e cole a saída. Revise antes de colar e apague caminhos pessoais se quiser.
+      render: text
+  - type: input
+    id: versions
+    attributes:
+      label: Versões
+      description: "Saída de `td version`, versão do Windows e de `claude --version`"
+  - type: dropdown
+    id: module
+    attributes:
+      label: Módulo
+      options: [Cockpit / status line, Temas, CLI, Atualizador, Voice Engine, Instalador, Outro]

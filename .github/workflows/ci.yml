@@ -1,0 +1,35 @@
+# Actions used: actions/checkout (MIT), actions/setup-node (MIT). Both maintained by GitHub.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        node: ['18', '20', '22']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm run lint
+      - run: npm test
+      - name: CLI smoke test
+        run: |
+          node bin/td.js version
+          node bin/td.js theme list --no-color
+          node bin/td.js doctor --json
+        env:
+          TD_DATA_HOME: ${{ runner.temp }}/td-data
+          TD_CONFIG_HOME: ${{ runner.temp }}/td-config
+          CLAUDE_CONFIG_DIR: ${{ runner.temp }}/claude

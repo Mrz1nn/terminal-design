@@ -1,0 +1,47 @@
+{
+  "$schema": "./theme.schema.json",
+  "name": "terminal-classic",
+  "displayName": "Terminal Classic",
+  "author": "Terminal-Design (cores ANSI do esquema Campbell, Microsoft)",
+  "license": "MIT",
+  "source": "https://github.com/microsoft/terminal",
+  "notes": "Visual de terminal clássico, sem cantos arredondados.",
+  "palette": {
+    "background": "#0c0c0c",
+    "foreground": "#cccccc",
+    "primary": "#3b78ff",
+    "secondary": "#b4009e",
+    "accent": "#61d6d6",
+    "success": "#16c60c",
+    "warning": "#f9f1a5",
+    "error": "#e74856",
+    "muted": "#767676",
+    "surface": "#1a1a1a"
+  },
+  "ansi": {
+    "black": "#0c0c0c",
+    "red": "#c50f1f",
+    "green": "#13a10e",
+    "yellow": "#c19c00",
+    "blue": "#0037da",
+    "magenta": "#881798",
+    "cyan": "#3a96dd",
+    "white": "#cccccc",
+    "brightBlack": "#767676",
+    "brightRed": "#e74856",
+    "brightGreen": "#16c60c",
+    "brightYellow": "#f9f1a5",
+    "brightBlue": "#3b78ff",
+    "brightMagenta": "#b4009e",
+    "brightCyan": "#61d6d6",
+    "brightWhite": "#f2f2f2"
+  },
+  "style": {
+    "bar": {
+      "filled": "#",
+      "empty": "."
+    },
+    "separator": " | ",
+    "border": "ascii"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "name": "terminal-design",
+  "version": "0.1.0",
+  "description": "Open source terminal cockpit for Windows: Claude Code status line, themes, self-updater and offline voice typing.",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "td": "bin/td.js"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "os": [
+    "win32",
+    "linux",
+    "darwin"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "lint": "node scripts/check.js",
+    "td": "node bin/td.js",
+    "release:pack": "node scripts/pack-release.js"
+  },
+  "terminalDesign": {
+    "repository": "Mrz1nn/terminal-design",
+    "releaseAsset": "terminal-design-{version}.zip",
+    "checksumAsset": "SHA256SUMS.txt"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Mrz1nn/terminal-design.git"
+  },
+  "keywords": [
+    "terminal",
+    "statusline",
+    "claude-code",
+    "themes",
+    "windows-terminal",
+    "whisper",
+    "voice"
+  ]
+}

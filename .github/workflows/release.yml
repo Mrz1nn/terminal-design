@@ -1,0 +1,51 @@
+# Publishes a GitHub Release when a tag like v1.2.3 (or v1.2.3-beta.1) is pushed.
+# Assets: terminal-design-<version>.zip + SHA256SUMS.txt, which `td update` downloads
+# and verifies.
+#
+# Third-party actions used (both MIT licensed, maintained by GitHub):
+#   actions/checkout, actions/setup-node
+# The release itself is created with the GitHub CLI (`gh`, MIT) preinstalled on the runner.
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Tag must match package.json version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($tag -ne "v$version") { throw "tag $tag does not match package.json version $version" }
+
+      - name: Tests
+        run: node --test tests/
+
+      - name: Pack
+        run: node scripts/pack-release.js
+
+      - name: Create release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag.TrimStart('v')
+          $flags = @()
+          if ($version -match '-') { $flags += '--prerelease' }
+          gh release create $tag "dist/terminal-design-$version.zip" "dist/SHA256SUMS.txt" `
+            --title "Terminal-Design $version" --generate-notes --verify-tag @flags

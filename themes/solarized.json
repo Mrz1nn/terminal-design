@@ -1,0 +1,45 @@
+{
+  "$schema": "./theme.schema.json",
+  "name": "solarized",
+  "displayName": "Solarized Dark",
+  "author": "Ethan Schoonover",
+  "license": "MIT",
+  "source": "https://github.com/altercation/solarized",
+  "notes": "Variante dark.",
+  "palette": {
+    "background": "#002b36",
+    "foreground": "#93a1a1",
+    "primary": "#268bd2",
+    "secondary": "#6c71c4",
+    "accent": "#2aa198",
+    "success": "#859900",
+    "warning": "#b58900",
+    "error": "#dc322f",
+    "muted": "#586e75",
+    "surface": "#073642"
+  },
+  "ansi": {
+    "black": "#073642",
+    "red": "#dc322f",
+    "green": "#859900",
+    "yellow": "#b58900",
+    "blue": "#268bd2",
+    "magenta": "#d33682",
+    "cyan": "#2aa198",
+    "white": "#eee8d5",
+    "brightBlack": "#002b36",
+    "brightRed": "#cb4b16",
+    "brightGreen": "#586e75",
+    "brightYellow": "#657b83",
+    "brightBlue": "#839496",
+    "brightMagenta": "#6c71c4",
+    "brightCyan": "#93a1a1",
+    "brightWhite": "#fdf6e3"
+  },
+  "style": {
+    "bar": {
+      "filled": "▪",
+      "empty": "·"
+    }
+  }
+}
