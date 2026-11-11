@@ -6,19 +6,19 @@
 //   const engine = createEngine(opts); await engine.start(); ... await engine.stop();
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { resolveOptions, createEngine, listDevices, recordOnce, transcribeFile, assertReady, cleanTempDir, SILENCE_PEAK } from './engine.js';
+import { resolveOptions, createEngine, blockedMessage, listDevices, recordOnce, transcribeFile, assertReady, cleanTempDir, SILENCE_PEAK } from './engine.js';
 import { planSetup, runSetup } from './setup.js';
 import { MODELS, PINNED_RELEASE, voicePaths, verifyModel, readManifest } from './assets.js';
 import { HOST_SCRIPT, powershellExe } from './host.js';
-import { parseHotkey } from './hotkey.js';
+import { parseHotkey, hotkeyWarnings } from './hotkey.js';
 
-export { parseHotkey, MOD } from './hotkey.js';
+export { parseHotkey, hotkeyWarnings, DEFAULT_HOTKEY, MOD } from './hotkey.js';
 export { cleanTranscript, finalizeText } from './text.js';
 export { buildWhisperArgs, runWhisper, defaultThreads } from './whisper.js';
 export { parseLine, createLineDecoder, encodeCommand } from './protocol.js';
 export { buildHostArgs, startHost, HOST_SCRIPT } from './host.js';
 export { MODELS, PINNED_RELEASE, voicePaths, pickRelease, formatBytes } from './assets.js';
-export { resolveOptions, createEngine, listDevices, recordOnce, transcribeFile, cleanTempDir, SILENCE_PEAK, planSetup, runSetup };
+export { resolveOptions, createEngine, blockedMessage, listDevices, recordOnce, transcribeFile, cleanTempDir, SILENCE_PEAK, planSetup, runSetup };
 
 /** Plan + confirm + download. See setup.js for the details. */
 export async function setup({ config, model, latest, force, allowUnverified, whisperPath, modelPath, confirm, log } = {}) {
@@ -64,6 +64,14 @@ export async function doctor(opts, { probeMic = true } = {}) {
     return [{ name: 'voz', ok: null, detail: 'disponível só no Windows' }];
   }
   const checks = [];
+
+  try {
+    const hk = parseHotkey(opts.hotkey);
+    const w = hotkeyWarnings(hk);
+    checks.push({ name: 'Atalho de voz', ok: w.length ? null : true, detail: w.length ? w.join(' ') : hk.label });
+  } catch (e) {
+    checks.push({ name: 'Atalho de voz', ok: false, detail: e.message });
+  }
 
   const ps = spawnSync(powershellExe(), ['-NoProfile', '-NonInteractive', '-Command', '$PSVersionTable.PSVersion.ToString()'], { encoding: 'utf8', windowsHide: true, timeout: 20000 });
   const psOk = ps.status === 0;

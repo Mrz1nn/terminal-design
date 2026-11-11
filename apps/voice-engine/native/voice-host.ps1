@@ -10,9 +10,9 @@
 #>
 param(
   [ValidateSet('listen', 'record', 'devices')][string]$Mode = 'listen',
-  [int]$Modifiers = 3,
-  [int]$Vk = 0x20,
-  [string]$HotkeyLabel = 'Ctrl+Alt+Space',
+  [int]$Modifiers = 6,
+  [int]$Vk = 0x78,
+  [string]$HotkeyLabel = 'Ctrl+Shift+F9',
   [ValidateSet('push-to-talk', 'toggle')][string]$Trigger = 'push-to-talk',
   [int]$MaxSeconds = 60,
   [int]$Seconds = 5,

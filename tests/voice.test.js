@@ -23,7 +23,7 @@ const fakeVp = (root) => ({
 
 // ---- hotkey ---------------------------------------------------------------------
 
-test('parseHotkey: default Ctrl+Alt+Space', () => {
+test('parseHotkey: Ctrl+Alt+Space (old default, still accepted)', () => {
   const h = parseHotkey('Ctrl+Alt+Space');
   assert.equal(h.modifiers, MOD.CTRL | MOD.ALT);
   assert.equal(h.vk, 0x20);

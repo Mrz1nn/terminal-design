@@ -1,8 +1,9 @@
 // `td voice`: offline dictation (whisper.cpp) with a global push-to-talk hotkey.
 // All logic lives in apps/voice-engine; this file only maps flags and prints.
+import readline from 'node:readline';
 import {
   resolveOptions, createEngine, test, listDevices, status, doctor, planSetup, runSetup,
-  formatBytes, parseHotkey, MODELS,
+  formatBytes, parseHotkey, hotkeyWarnings, DEFAULT_HOTKEY, MODELS,
 } from '../../../../apps/voice-engine/src/index.js';
 
 const LANGS = ['pt', 'en', 'auto'];
@@ -158,23 +159,42 @@ async function cmdStart({ ctx, opts }) {
     else if (state === 'stopped' && message) ui.warn(message);
   });
   engine.on('transcript', ({ text, ms }) => ui.print(`  ${ui.c.muted(time())} ${ui.c.success('✓')} ${text} ${ui.c.muted(`(${ms} ms)`)}`));
+  // R1/R2: insertion refused (focus moved, key held). The text is kept and can be copied.
+  engine.on('blocked', ({ text, message }) => {
+    ui.warn(message);
+    ui.print(`    ${ui.c.muted('texto guardado:')} ${ui.c.fg(text)}`);
+    ui.print(`    ${ui.c.muted('para copiar: aperte Enter neste terminal ou use o ícone da bandeja > Copiar última transcrição')}`);
+  });
+  engine.on('copied', ({ chars }) => ui.ok(`transcrição copiada (${chars} caractere(s)). Cole com Ctrl+V onde quiser.`));
   engine.on('warn', ({ message }) => ui.warn(message));
   engine.on('fail', ({ message }) => ui.error(message));
   if (process.env.TD_DEBUG) engine.on('debug', (l) => ui.print(ui.c.dim(`  [host] ${l}`)));
 
   ui.title('Digitação por voz');
+  for (const w of hotkeyWarnings(hk)) ui.warn(w);
   ui.info('iniciando o host de voz (a primeira vez compila o helper, ~2s)…');
   const ready = await engine.start();
   const how = opts.mode === 'toggle' ? `aperte ${hk.label} para começar e de novo para parar` : `segure ${hk.label} enquanto fala e solte para digitar`;
   ui.ok(`pronto: ${how}`);
   ui.print(`  ${ui.c.muted(`microfone: ${ready.device} · idioma: ${opts.language} · modelo: ${opts.model.name ?? opts.model.path} · inserção: ${opts.insertMode}`)}`);
   ui.print(`  ${ui.c.muted('Ctrl+C aqui (ou "Sair" no ícone da bandeja) encerra. Nenhum áudio é guardado.')}`);
+  ui.print(`  ${ui.c.muted('Se a janela mudar ou houver tecla pressionada, nada é digitado e o texto fica guardado para copiar.')}`);
+
+  // Enter in this terminal copies the last transcription that was not inserted.
+  let rl = null;
+  if (process.stdin.isTTY) {
+    rl = readline.createInterface({ input: process.stdin });
+    rl.on('line', () => {
+      if (!engine.copyLast()) ui.info('nenhuma transcrição guardada para copiar');
+    });
+  }
 
   return new Promise((resolve) => {
     let done = false;
     const finish = async (code) => {
       if (done) return;
       done = true;
+      rl?.close();
       process.off('SIGINT', onSig);
       process.off('SIGTERM', onSig);
       await engine.stop().catch(() => {});
@@ -192,12 +212,12 @@ export default {
   id: 'voice',
   summary: 'digitação por voz offline (whisper.cpp) com atalho global',
   usage: [
-    'td voice                         inicia (segure Ctrl+Alt+Space, fale, solte)',
+    `td voice                         inicia (segure ${DEFAULT_HOTKEY}, fale, solte)`,
     'td voice setup [--model=base] [--latest [--allow-unverified]] [--force] [--yes]',
     'td voice devices                 lista microfones',
     'td voice test [--seconds=5]      grava e mostra o texto, sem digitar',
     'td voice status [--json]',
-    'opções: --toggle --hotkey=Ctrl+Alt+V --language=pt|en|auto --mic=<índice|nome>',
+    'opções: --toggle --hotkey=Ctrl+Shift+F8 --language=pt|en|auto --mic=<índice|nome>',
     '        --paste --no-space --no-overlay --no-tray --whisper=<exe> --model-path=<bin>',
   ],
   async run({ args, flags, ctx }) {

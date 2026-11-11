@@ -1,19 +1,23 @@
 // JSON-lines protocol between Node and the native host (voice-host.cs).
 //
-//   host -> node   {"event":"ready","hotkey":"Ctrl+Alt+Space","mode":"push-to-talk","device":"..."}
+//   host -> node   {"event":"ready","hotkey":"Ctrl+Shift+F9","mode":"push-to-talk","device":"..."}
 //                  {"event":"recording","device":"..."}
-//                  {"event":"audio","path":"C:\\...\\td-voice-123-1.wav","durationMs":2100,"peak":5400,"reason":"release"}
+//                  {"event":"audio","id":1,"path":"C:\\...\\td-voice-123-1.wav","durationMs":2100,"peak":5400,"reason":"release"}
 //                  {"event":"cancelled","reason":"short","durationMs":120}
-//                  {"event":"typed","chars":12,"requested":12,"insertMode":"type"}
+//                  {"event":"typed","id":1,"chars":12,"requested":12,"insertMode":"type"}
+//                  {"event":"blocked","id":1,"outcome":"blocked"|"interrupted","reason":"focus"|"modifier"|"no-target"|"error","keys":"Ctrl","chars":0,"requested":12}
+//                  {"event":"copied","chars":12}
 //                  {"event":"devices","devices":[{"index":0,"name":"Microfone (...)","channels":2}]}
 //                  {"event":"warn"|"error","code":"...","message":"..."}
 //                  {"event":"quit","reason":"tray"}
-//   node -> host   {"cmd":"type","text":"olá ","insertMode":"type"}
+//   node -> host   {"cmd":"type","id":1,"text":"olá ","insertMode":"type"}   at most once per id
+//                  {"cmd":"drop","id":1}      recording will not be inserted (silence, nothing recognized)
+//                  {"cmd":"copy"}               copy the last non-inserted transcription (user action)
 //                  {"cmd":"state","state":"idle"|"processing"|"error","message":"..."}
 //                  {"cmd":"quit"}
 
-export const EVENTS = new Set(['ready', 'recording', 'audio', 'cancelled', 'typed', 'devices', 'warn', 'error', 'quit']);
-export const COMMANDS = new Set(['type', 'state', 'quit']);
+export const EVENTS = new Set(['ready', 'recording', 'audio', 'cancelled', 'typed', 'blocked', 'copied', 'devices', 'warn', 'error', 'quit']);
+export const COMMANDS = new Set(['type', 'drop', 'copy', 'state', 'quit']);
 
 /** One line -> message object, or null when it is not a protocol message (noise, warnings). */
 export function parseLine(line) {

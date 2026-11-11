@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
-import { parseHotkey } from './hotkey.js';
+import { parseHotkey, DEFAULT_HOTKEY } from './hotkey.js';
 import { cleanTranscript, finalizeText } from './text.js';
 import { buildWhisperArgs, runWhisper } from './whisper.js';
 import { startHost, runHostOnce } from './host.js';
@@ -20,7 +20,7 @@ export function resolveOptions({ config = {}, overrides = {}, vp = voicePaths() 
   const whisper = resolveWhisperBinary({ explicit: overrides.whisperPath, config, vp });
   const model = resolveModel({ explicit: overrides.modelPath, config, name: v.model, vp });
   return {
-    hotkey: v.hotkey ?? 'Ctrl+Alt+Space',
+    hotkey: v.hotkey ?? DEFAULT_HOTKEY,
     mode: v.mode ?? 'push-to-talk',
     language: v.language ?? 'pt',
     modelName: v.model ?? 'base',
@@ -110,21 +110,43 @@ export async function recordOnce(opts, { seconds = 5, onRecording } = {}) {
   });
 }
 
+/** Human message for a blocked/interrupted insertion reported by the host. */
+export function blockedMessage(m) {
+  const why = m.reason === 'focus' ? 'a janela em foco mudou depois que você começou a falar'
+    : m.reason === 'modifier' ? `havia tecla pressionada (${m.keys || 'modificador'}) e digitar dispararia atalhos`
+      : m.reason === 'no-target' ? 'nenhuma janela estava em foco quando a gravação começou'
+        : 'o Windows recusou a digitação';
+  const what = m.outcome === 'interrupted'
+    ? `inserção interrompida depois de ${m.chars} de ${m.requested} caractere(s)`
+    : 'inserção cancelada, nada foi digitado';
+  return `${what}: ${why}`;
+}
+
 /**
  * Long-running engine. Events:
- *   'status' {state: 'starting'|'ready'|'recording'|'processing'|'typed'|'idle'|'stopped', message?}
+ *   'status' {state: 'starting'|'ready'|'recording'|'processing'|'typed'|'blocked'|'idle'|'stopped', message?}
  *   'transcript' {text, ms, durationMs}
+ *   'blocked' {text, reason, keys, outcome, chars, requested, message}   text kept for manual copy
+ *   'copied' {chars}
  *   'warn' {message}   'error' handled as 'fail' {message, fatal}
+ *
+ * `deps` replaces the host, whisper and readiness check in tests (no PowerShell, no audio).
  */
-export function createEngine(opts) {
+export function createEngine(opts, deps = {}) {
+  const d = { startHost, transcribeFile, assertReady, ...deps };
   const em = new EventEmitter();
   const hk = parseHotkey(opts.hotkey);
   let host = null;
   let stopping = false;
   const queue = [];
   let busy = false;
+  // Text sent for insertion, by recording id, until the host answers typed/blocked.
+  const sentText = new Map();
+  let lastBlocked = null;
 
   const status = (state, message) => em.emit('status', { state, message });
+  // Tell the host this recording will not be inserted, so its pending target is released.
+  const drop = (audio) => host?.send({ cmd: 'drop', id: audio.id });
 
   async function processNext() {
     if (busy || queue.length === 0) return;
@@ -133,20 +155,26 @@ export function createEngine(opts) {
     try {
       if (audio.peak < SILENCE_PEAK) {
         fs.rmSync(audio.path, { force: true });
+        drop(audio);
         status('idle', 'silêncio: nada foi gravado (confira o microfone)');
         host?.send({ cmd: 'state', state: 'idle', message: 'só silêncio' });
         return;
       }
       status('processing');
-      const { text, ms } = await transcribeFile(audio.path, opts);
+      const { text, ms } = await d.transcribeFile(audio.path, opts);
       if (!text) {
+        drop(audio);
         status('idle', 'nada reconhecido');
         host?.send({ cmd: 'state', state: 'idle', message: 'nada reconhecido' });
         return;
       }
       em.emit('transcript', { text, ms, durationMs: audio.durationMs });
-      host?.send({ cmd: 'type', text: finalizeText(text, opts), insertMode: opts.insertMode });
+      const final = finalizeText(text, opts);
+      sentText.set(audio.id, final);
+      // Exactly one insertion request per recording; the host also refuses repeats.
+      host?.send({ cmd: 'type', id: audio.id, text: final, insertMode: opts.insertMode });
     } catch (err) {
+      drop(audio);
       em.emit('fail', { message: err.message, fatal: false });
       host?.send({ cmd: 'state', state: 'error', message: 'erro na transcrição' });
     } finally {
@@ -155,12 +183,21 @@ export function createEngine(opts) {
     }
   }
 
+  /** Last transcription that was not inserted (focus change, held key...), or null. */
+  em.lastBlocked = () => lastBlocked;
+
+  /** Copy the last non-inserted transcription to the clipboard (explicit user action). */
+  em.copyLast = () => {
+    if (!lastBlocked) return false;
+    return host?.send({ cmd: 'copy' }) ?? false;
+  };
+
   em.start = () => new Promise((resolve, reject) => {
-    assertReady(opts);
+    d.assertReady(opts);
     fs.mkdirSync(opts.vp.tmp, { recursive: true });
     cleanTempDir(opts.vp.tmp);
     status('starting');
-    host = startHost({
+    host = d.startHost({
       mode: 'listen', hotkey: hk, trigger: opts.mode, maxSeconds: opts.maxSeconds, device: opts.microphone,
       insertMode: opts.insertMode, outDir: opts.vp.tmp, cacheDir: opts.vp.cache, overlay: opts.overlay, tray: opts.tray,
     });
@@ -170,9 +207,19 @@ export function createEngine(opts) {
     host.on('audio', (m) => { queue.push(m); processNext(); });
     host.on('cancelled', (m) => status('idle', m.reason === 'short' ? 'gravação muito curta, ignorada' : m.reason));
     host.on('typed', (m) => {
+      sentText.delete(m.id);
       status('typed', `${m.chars} caractere(s)`);
       if (m.chars < m.requested) em.emit('warn', { message: 'parte do texto não foi digitada (janela elevada ou bloqueada?)' });
     });
+    host.on('blocked', (m) => {
+      const text = sentText.get(m.id) ?? '';
+      sentText.delete(m.id);
+      const message = blockedMessage(m);
+      lastBlocked = { text, reason: m.reason, keys: m.keys || '', outcome: m.outcome, chars: m.chars, requested: m.requested, message };
+      status('blocked', message);
+      em.emit('blocked', lastBlocked);
+    });
+    host.on('copied', (m) => em.emit('copied', { chars: m.chars }));
     host.on('warn', (m) => em.emit('warn', { message: m.message }));
     host.on('host-error', (m) => {
       if (!ready) reject(new Error(m.message));

@@ -7,8 +7,10 @@
 //   - indicators: tray NotifyIcon + small topmost overlay that never takes focus
 //
 // It talks to Node over stdin/stdout, one JSON object per line (UTF-8).
-//   host -> node: {"event":"ready"|"recording"|"audio"|"cancelled"|"typed"|"devices"|"warn"|"error"|"quit", ...}
-//   node -> host: {"cmd":"type"|"state"|"quit", ...}
+//   host -> node: {"event":"ready"|"recording"|"audio"|"cancelled"|"typed"|"blocked"|"copied"|"devices"|"warn"|"error"|"quit", ...}
+//   node -> host: {"cmd":"type"|"drop"|"copy"|"state"|"quit", ...}
+// Each recording gets an id ("audio" event). It can be inserted once ("type" with that id), only
+// into the window that had focus when recording started, and never while a modifier is held.
 // When stdin closes (Node died) the host exits, so it can never be left running orphaned.
 using System;
 using System.Collections.Generic;
@@ -335,49 +337,180 @@ namespace TerminalDesign.Voice
         }
     }
 
-    /// <summary>Text insertion into whatever window has keyboard focus.</summary>
-    internal static class Typist
+    /// <summary>
+    /// Everything text insertion needs from Windows, behind an interface so the safety rules
+    /// (focus, modifier keys, clipboard restore, no stuck keys) can be unit-tested with a fake
+    /// environment that never touches the real keyboard, windows or clipboard.
+    /// </summary>
+    internal interface IInputEnv
+    {
+        IntPtr Foreground();
+        bool IsDown(int vk);
+        uint Send(Native.INPUT[] inputs);
+        void Sleep(int ms);
+        IDataObject ClipboardGet();
+        void ClipboardSetText(string text);
+        void ClipboardSet(IDataObject data);
+        void ClipboardClear();
+    }
+
+    /// <summary>The real Win32 environment.</summary>
+    internal sealed class WinInputEnv : IInputEnv
     {
         static readonly int InputSize = Marshal.SizeOf(typeof(Native.INPUT));
-        static readonly int[] ModifierKeys = { 0x10, 0x11, 0x12, 0x5B, 0x5C }; // Shift, Ctrl, Alt, LWin, RWin
+        public IntPtr Foreground() { return Native.GetForegroundWindow(); }
+        public bool IsDown(int vk) { return (Native.GetAsyncKeyState(vk) & 0x8000) != 0; }
+        public uint Send(Native.INPUT[] inputs) { return inputs.Length == 0 ? 0 : Native.SendInput((uint)inputs.Length, inputs, InputSize); }
+        public void Sleep(int ms) { Thread.Sleep(ms); }
+        public IDataObject ClipboardGet() { return Clipboard.GetDataObject(); }
+        public void ClipboardSetText(string text) { Clipboard.SetText(text); }
+        public void ClipboardSet(IDataObject data) { Clipboard.SetDataObject(data, true); }
+        public void ClipboardClear() { Clipboard.Clear(); }
+    }
 
-        static Native.INPUT Key(ushort vk, ushort scan, uint flags)
+    /// <summary>Outcome of one insertion attempt.</summary>
+    internal sealed class InsertResult
+    {
+        public string Outcome = "typed";   // typed | blocked | interrupted
+        public string Reason;              // focus | modifier | no-target | error (null when typed)
+        public string Keys;                // pressed keys when Reason == modifier, e.g. "Ctrl+Shift"
+        public string Mode;                // type | paste (what was actually used)
+        public int Chars;                  // characters delivered
+        public int Requested;
+        public string Warning;             // non-fatal note (e.g. clipboard could not be preserved)
+    }
+
+    /// <summary>
+    /// One pending insertion per recording. The host registers the window that had focus when
+    /// the recording started; a `type` command can claim it exactly once.
+    /// </summary>
+    internal sealed class PendingTargets
+    {
+        readonly Dictionary<int, IntPtr> map = new Dictionary<int, IntPtr>();
+        public void Add(int id, IntPtr target) { lock (map) map[id] = target; }
+        public bool Take(int id, out IntPtr target)
+        {
+            lock (map)
+            {
+                if (!map.TryGetValue(id, out target)) return false;
+                map.Remove(id);
+                return true;
+            }
+        }
+        public int Count { get { lock (map) return map.Count; } }
+    }
+
+    /// <summary>
+    /// Safe text insertion. Rules:
+    ///  R1  text goes only to the window that had focus when recording started; if focus moved
+    ///      (before or while typing) nothing more is typed.
+    ///  R2  if Ctrl/Alt/Shift/Win (or the hotkey key) is still held after a short grace period,
+    ///      nothing is typed, so letters can never turn into shortcuts. Every key this code
+    ///      presses is released, even when Windows accepts only part of a batch.
+    /// </summary>
+    internal static class Typist
+    {
+        // Generic + left/right variants: Shift, Ctrl, Alt, LWin, RWin.
+        static readonly int[] ModifierKeys = { 0x10, 0x11, 0x12, 0x5B, 0x5C, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5 };
+        public const int GraceMs = 1500;
+        const int PollMs = 15;
+        const int Chunk = 32; // small batches: some console hosts drop very large bursts
+
+        internal static Native.INPUT Key(ushort vk, ushort scan, uint flags)
         {
             var i = new Native.INPUT { type = Native.INPUT_KEYBOARD };
             i.u.ki = new Native.KEYBDINPUT { wVk = vk, wScan = scan, dwFlags = flags };
             return i;
         }
 
-        /// <summary>Typing while the user still holds Ctrl/Alt would turn letters into shortcuts.</summary>
-        public static void WaitModifiersReleased(int hotkeyVk, int timeoutMs)
-        {
-            var until = DateTime.UtcNow.AddMilliseconds(timeoutMs);
-            while (DateTime.UtcNow < until)
-            {
-                bool down = hotkeyVk != 0 && (Native.GetAsyncKeyState(hotkeyVk) & 0x8000) != 0;
-                foreach (int k in ModifierKeys) if ((Native.GetAsyncKeyState(k) & 0x8000) != 0) down = true;
-                if (!down) return;
-                Thread.Sleep(15);
-            }
-        }
-
         /// <summary>
         /// Taps an unassigned virtual key (0xE8) so that releasing Alt/Win after the hotkey
         /// does not open the window menu bar / Start menu (same trick AutoHotkey uses).
         /// </summary>
-        public static void MaskMenuKey()
+        public static void MaskMenuKey(IInputEnv env)
         {
-            var inputs = new[] { Key(0xE8, 0, 0), Key(0xE8, 0, Native.KEYEVENTF_KEYUP) };
-            Native.SendInput((uint)inputs.Length, inputs, InputSize);
+            env.Send(new[] { Key(0xE8, 0, 0), Key(0xE8, 0, Native.KEYEVENTF_KEYUP) });
         }
 
-        public static int TypeUnicode(string text)
+        /// <summary>Human-readable list of held modifier keys ("" when none). AltGr = RightAlt.</summary>
+        public static string HeldKeys(IInputEnv env, int hotkeyVk)
         {
-            int sent = 0;
-            const int chunk = 32; // small batches: some console hosts drop very large bursts
-            for (int start = 0; start < text.Length; start += chunk)
+            var names = new List<string>();
+            bool rAlt = env.IsDown(0xA5), lAlt = env.IsDown(0xA4);
+            bool ctrl = env.IsDown(0x11) || env.IsDown(0xA2) || env.IsDown(0xA3);
+            bool alt = env.IsDown(0x12) || lAlt || rAlt;
+            // Windows reports AltGr as Right Alt plus a synthesized Ctrl: show it as one key.
+            bool altGr = rAlt && !lAlt;
+            if (altGr) names.Add("AltGr");
+            else
             {
-                int end = Math.Min(text.Length, start + chunk);
+                if (ctrl) names.Add("Ctrl");
+                if (alt) names.Add("Alt");
+            }
+            if (env.IsDown(0x10) || env.IsDown(0xA0) || env.IsDown(0xA1)) names.Add("Shift");
+            if (env.IsDown(0x5B) || env.IsDown(0x5C)) names.Add("Win");
+            if (hotkeyVk != 0 && Array.IndexOf(ModifierKeys, hotkeyVk) < 0 && env.IsDown(hotkeyVk)) names.Add("tecla do atalho");
+            return string.Join("+", names.ToArray());
+        }
+
+        /// <summary>Wait up to GraceMs for the user to let go of the hotkey; returns what is still held.</summary>
+        public static string WaitModifiersReleased(IInputEnv env, int hotkeyVk, int graceMs)
+        {
+            int loops = Math.Max(1, graceMs / PollMs);
+            string held = HeldKeys(env, hotkeyVk);
+            for (int i = 0; i < loops && held.Length > 0; i++)
+            {
+                env.Sleep(PollMs);
+                held = HeldKeys(env, hotkeyVk);
+            }
+            return held;
+        }
+
+        /// <summary>null when it is safe to send input to `target` right now, otherwise the block reason.</summary>
+        static InsertResult Check(IInputEnv env, IntPtr target, int hotkeyVk, InsertResult r)
+        {
+            if (env.Foreground() != target) { r.Reason = "focus"; return r; }
+            string held = HeldKeys(env, hotkeyVk);
+            if (held.Length > 0) { r.Reason = "modifier"; r.Keys = held; return r; }
+            return null;
+        }
+
+        /// <summary>
+        /// Insert `text` into `target` with mode "type" or "paste". Never types into another window,
+        /// never types while a modifier is held, never leaves an injected key down.
+        /// </summary>
+        public static InsertResult Insert(string text, string how, IntPtr target, int hotkeyVk, IInputEnv env, int graceMs)
+        {
+            var r = new InsertResult { Requested = text.Length, Mode = how == "paste" ? "paste" : "type" };
+            if (target == IntPtr.Zero) { r.Outcome = "blocked"; r.Reason = "no-target"; return r; }
+
+            string held = WaitModifiersReleased(env, hotkeyVk, graceMs);
+            if (env.Foreground() != target) { r.Outcome = "blocked"; r.Reason = "focus"; return r; }
+            if (held.Length > 0) { r.Outcome = "blocked"; r.Reason = "modifier"; r.Keys = held; return r; }
+
+            if (r.Mode == "paste")
+            {
+                bool wasEmpty;
+                DataObject previous = SnapshotClipboard(env, out wasEmpty);
+                if (previous != null || wasEmpty) return Paste(text, target, hotkeyVk, env, previous, r);
+                // Could not copy what the user has on the clipboard: never overwrite it, type instead.
+                r.Mode = "type";
+                r.Warning = "área de transferência com conteúdo que não dá para preservar; digitando em vez de colar";
+            }
+            return TypeUnicode(text, target, hotkeyVk, env, r);
+        }
+
+        static InsertResult TypeUnicode(string text, IntPtr target, int hotkeyVk, IInputEnv env, InsertResult r)
+        {
+            for (int start = 0; start < text.Length; start += Chunk)
+            {
+                // Re-check before every batch: focus can move or a key can be pressed mid-way.
+                if (Check(env, target, hotkeyVk, r) != null)
+                {
+                    r.Outcome = r.Chars == 0 ? "blocked" : "interrupted";
+                    return r;
+                }
+                int end = Math.Min(text.Length, start + Chunk);
                 var list = new List<Native.INPUT>();
                 for (int i = start; i < end; i++)
                 {
@@ -386,10 +519,19 @@ namespace TerminalDesign.Voice
                     list.Add(Key(0, c, Native.KEYEVENTF_UNICODE | Native.KEYEVENTF_KEYUP));
                 }
                 var arr = list.ToArray();
-                sent += (int)Native.SendInput((uint)arr.Length, arr, InputSize);
-                Thread.Sleep(5);
+                int sent = (int)env.Send(arr);
+                // An odd count means a key-down went through without its key-up: release it.
+                if (sent % 2 == 1) env.Send(new[] { Key(0, arr[sent - 1].u.ki.wScan, Native.KEYEVENTF_UNICODE | Native.KEYEVENTF_KEYUP) });
+                r.Chars += sent / 2;
+                if (sent < arr.Length)
+                {
+                    r.Outcome = r.Chars == 0 ? "blocked" : "interrupted";
+                    r.Reason = "error";
+                    return r;
+                }
+                env.Sleep(5);
             }
-            return sent / 2;
+            return r;
         }
 
         /// <summary>
@@ -398,11 +540,11 @@ namespace TerminalDesign.Voice
         /// in that case the caller must NOT restore, because a partial restore would lose data.
         /// `empty` is true when the clipboard had nothing at all.
         /// </summary>
-        static DataObject SnapshotClipboard(out bool empty)
+        internal static DataObject SnapshotClipboard(IInputEnv env, out bool empty)
         {
             empty = false;
             IDataObject current;
-            try { current = Clipboard.GetDataObject(); } catch { return null; }
+            try { current = env.ClipboardGet(); } catch { return null; }
             if (current == null) { empty = true; return null; }
             string[] formats;
             try { formats = current.GetFormats(false); } catch { return null; }
@@ -427,28 +569,36 @@ namespace TerminalDesign.Voice
             return copy;
         }
 
-        public static int Paste(string text)
+        static InsertResult Paste(string text, IntPtr target, int hotkeyVk, IInputEnv env, DataObject previous, InsertResult r)
         {
-            bool wasEmpty;
-            DataObject previous = SnapshotClipboard(out wasEmpty);
-            if (previous == null && !wasEmpty)
+            try
             {
-                // Could not copy what the user has on the clipboard: never overwrite it, type instead.
-                Protocol.Emit("warn", "code", "clipboard",
-                    "message", "área de transferência com conteúdo que não dá para preservar; digitando em vez de colar");
-                return TypeUnicode(text);
+                env.ClipboardSetText(text);
+                // Last check right before Ctrl+V: the clipboard write can take a moment.
+                if (Check(env, target, hotkeyVk, r) != null) { r.Outcome = "blocked"; return r; }
+                var inputs = new[]
+                {
+                    Key(0x11, 0, 0), Key(0x56, 0, 0), Key(0x56, 0, Native.KEYEVENTF_KEYUP), Key(0x11, 0, Native.KEYEVENTF_KEYUP)
+                };
+                uint n = env.Send(inputs);
+                if (n < inputs.Length)
+                {
+                    // Partial batch: release V and Ctrl so nothing stays artificially held.
+                    if (n > 0) env.Send(new[] { Key(0x56, 0, Native.KEYEVENTF_KEYUP), Key(0x11, 0, Native.KEYEVENTF_KEYUP) });
+                    r.Outcome = "blocked";
+                    r.Reason = "error";
+                    return r;
+                }
+                r.Chars = text.Length;
+                // Give the target app time to read the clipboard before restoring it.
+                env.Sleep(250);
+                return r;
             }
-            Clipboard.SetText(text);
-            var inputs = new[]
+            finally
             {
-                Key(0x11, 0, 0), Key(0x56, 0, 0), Key(0x56, 0, Native.KEYEVENTF_KEYUP), Key(0x11, 0, Native.KEYEVENTF_KEYUP)
-            };
-            uint n = Native.SendInput((uint)inputs.Length, inputs, InputSize);
-            // Give the target app time to read the clipboard before restoring it.
-            Thread.Sleep(250);
-            // Restore every format that was there (or leave it empty if it was empty).
-            try { if (previous != null) Clipboard.SetDataObject(previous, true); else Clipboard.Clear(); } catch { }
-            return n == inputs.Length ? text.Length : 0;
+                // Restore every format that was there (or leave it empty if it was empty).
+                try { if (previous != null) env.ClipboardSet(previous); else env.ClipboardClear(); } catch { }
+            }
         }
 
         static bool IsElevated(IntPtr process, out bool known)
@@ -486,6 +636,12 @@ namespace TerminalDesign.Voice
                 return elevated || !known;
             }
             finally { Native.CloseHandle(p); }
+        }
+
+        /// <summary>AltGr on ABNT2 and other layouts is reported as Ctrl+Alt with Right Alt down.</summary>
+        public static bool IsAltGr(IInputEnv env)
+        {
+            return env.IsDown(0xA5) && !env.IsDown(0xA4);
         }
     }
 
@@ -562,6 +718,14 @@ namespace TerminalDesign.Voice
         static string deviceLabel;
         static int counter;
         static readonly Dictionary<string, Icon> icons = new Dictionary<string, Icon>();
+        static readonly IInputEnv env = new WinInputEnv();
+        // R1: the window that had focus when the current recording started, and one pending
+        // insertion per finished recording (claimed once by a `type` command).
+        static IntPtr recTarget;
+        static readonly PendingTargets pending = new PendingTargets();
+        // Last transcription that could not be inserted; offered for manual copy (memory only).
+        static string lastText;
+        static MenuItem copyItem;
 
         static readonly Color Red = Color.FromArgb(255, 95, 95);
         static readonly Color Amber = Color.FromArgb(255, 196, 80);
@@ -660,26 +824,93 @@ namespace TerminalDesign.Voice
             string cmd = Str(msg, "cmd");
             if (cmd == "quit") { Application.ExitThread(); return; }
             if (cmd == "state") { SetState(Str(msg, "state") ?? "idle", Str(msg, "message")); return; }
+            if (cmd == "copy") { CopyLast(); return; }
+            if (cmd == "drop")
+            {
+                // Nothing to insert for this recording (silence, nothing recognized, error).
+                IntPtr ignored;
+                pending.Take(Int(msg, "id"), out ignored);
+                return;
+            }
             if (cmd == "type")
             {
                 string text = Str(msg, "text") ?? "";
                 string how = Str(msg, "insertMode") ?? insertMode;
-                Typist.WaitModifiersReleased((int)vk, 3000);
-                if (Typist.TargetLooksElevated())
+                int id = Int(msg, "id");
+                IntPtr target;
+                if (!pending.Take(id, out target))
+                {
+                    // Unknown or already used id: a recording is inserted at most once.
+                    Protocol.Emit("warn", "code", "duplicate", "id", id, "message", "pedido de inserção repetido ignorado");
+                    return;
+                }
+                lastText = text;
+                if (env.Foreground() == target && Typist.TargetLooksElevated())
                     Protocol.Emit("warn", "code", "elevated",
                         "message", "a janela em foco parece rodar como administrador; o Windows pode bloquear a digitação");
-                int n = 0;
-                try { n = how == "paste" ? Typist.Paste(text) : Typist.TypeUnicode(text); }
-                catch (Exception e) { Protocol.Emit("error", "code", "type", "message", e.Message); }
-                Protocol.Emit("typed", "chars", n, "requested", text.Length, "insertMode", how);
-                SetState("idle", null);
+                InsertResult r;
+                try { r = Typist.Insert(text, how, target, (int)vk, env, Typist.GraceMs); }
+                catch (Exception e)
+                {
+                    r = new InsertResult { Outcome = "blocked", Reason = "error", Requested = text.Length, Mode = how };
+                    Protocol.Emit("error", "code", "type", "message", e.Message);
+                }
+                if (r.Warning != null) Protocol.Emit("warn", "code", "clipboard", "message", r.Warning);
+                if (r.Outcome == "typed")
+                {
+                    lastText = null;
+                    if (copyItem != null) copyItem.Enabled = false;
+                    Protocol.Emit("typed", "id", id, "chars", r.Chars, "requested", r.Requested, "insertMode", r.Mode);
+                    SetState("idle", null);
+                    return;
+                }
+                // Blocked or interrupted: keep the text for manual copy and say why.
+                if (copyItem != null) copyItem.Enabled = true;
+                Protocol.Emit("blocked", "id", id, "outcome", r.Outcome, "reason", r.Reason ?? "error", "keys", r.Keys ?? "",
+                    "chars", r.Chars, "requested", r.Requested);
+                SetState("blocked", BlockedMessage(r));
             }
+        }
+
+        static string BlockedMessage(InsertResult r)
+        {
+            string why = r.Reason == "focus" ? "a janela mudou"
+                : r.Reason == "modifier" ? "tecla pressionada (" + r.Keys + ")"
+                : r.Reason == "no-target" ? "nenhuma janela em foco"
+                : "o Windows recusou a digitação";
+            return (r.Outcome == "interrupted" ? "Inserção interrompida: " : "Inserção cancelada: ") + why + " · texto guardado";
+        }
+
+        static void CopyLast()
+        {
+            if (string.IsNullOrEmpty(lastText)) { Protocol.Emit("warn", "code", "nothing", "message", "não há transcrição guardada para copiar"); return; }
+            try
+            {
+                env.ClipboardSetText(lastText);
+                Protocol.Emit("copied", "chars", lastText.Length);
+                SetState("idle", "Transcrição copiada");
+            }
+            catch (Exception e) { Protocol.Emit("error", "code", "copy", "message", e.Message); }
+        }
+
+        static int Int(Dictionary<string, object> m, string k)
+        {
+            object v;
+            if (!m.TryGetValue(k, out v) || v == null) return -1;
+            try { return Convert.ToInt32(v); } catch { return -1; }
         }
 
         static void OnHotkey()
         {
+            // R3: on ABNT2 and similar layouts AltGr is reported as Ctrl+Alt. A Ctrl+Alt hotkey must not
+            // fire while the user is typing an AltGr character (AltGr+Q = "/", then Space...).
+            if ((modifiers & 0x3) == 0x3 && Typist.IsAltGr(env))
+            {
+                Protocol.Emit("warn", "code", "altgr", "message", "atalho ignorado: AltGr pressionado (use o Alt da esquerda)");
+                return;
+            }
             // Releasing Alt/Win after a hotkey would otherwise pop the menu bar / Start menu.
-            if ((modifiers & 0x9) != 0) Typist.MaskMenuKey();
+            if ((modifiers & 0x9) != 0) Typist.MaskMenuKey(env);
             if (recorder == null) StartRecording();
             else if (trigger == "toggle") StopRecording("hotkey");
         }
@@ -697,6 +928,7 @@ namespace TerminalDesign.Voice
                 return;
             }
             recStart = DateTime.UtcNow;
+            recTarget = env.Foreground(); // R1: text may only go back to this window
             SetState("recording", null);
             Protocol.Emit("recording", "device", deviceLabel);
             poll.Start();
@@ -737,7 +969,8 @@ namespace TerminalDesign.Voice
                 if (mode == "record") Application.ExitThread();
                 return;
             }
-            string path = Path.Combine(outDir, "td-voice-" + System.Diagnostics.Process.GetCurrentProcess().Id + "-" + (++counter) + ".wav");
+            int id = ++counter;
+            string path = Path.Combine(outDir, "td-voice-" + System.Diagnostics.Process.GetCurrentProcess().Id + "-" + id + ".wav");
             try { Recorder.WriteWav(path, data); }
             catch (Exception e)
             {
@@ -745,8 +978,9 @@ namespace TerminalDesign.Voice
                 SetState("error", e.Message);
                 return;
             }
+            if (mode == "listen") pending.Add(id, recTarget);
             SetState("processing", null);
-            Protocol.Emit("audio", "path", path, "durationMs", ms, "peak", rec.Peak, "reason", reason);
+            Protocol.Emit("audio", "id", id, "path", path, "durationMs", ms, "peak", rec.Peak, "reason", reason);
             if (mode == "record") Application.ExitThread();
         }
 
@@ -773,6 +1007,8 @@ namespace TerminalDesign.Voice
         {
             tray = new NotifyIcon { Icon = Dot("idle", Gray), Visible = true, Text = "Terminal-Design voz" };
             var menu = new ContextMenu();
+            copyItem = new MenuItem("Copiar última transcrição não inserida", delegate { CopyLast(); }) { Enabled = false };
+            menu.MenuItems.Add(copyItem);
             menu.MenuItems.Add("Sair da digitação por voz", delegate
             {
                 Protocol.Emit("quit", "reason", "tray");
@@ -785,10 +1021,11 @@ namespace TerminalDesign.Voice
 
         static void SetState(string state, string message)
         {
-            Color c = state == "recording" ? Red : state == "processing" ? Amber : state == "error" ? Red : Gray;
+            Color c = state == "recording" ? Red : state == "processing" || state == "blocked" ? Amber : state == "error" ? Red : Gray;
             string tip;
             if (state == "recording") tip = "Gravando…";
             else if (state == "processing") tip = "Transcrevendo…";
+            else if (state == "blocked") tip = "Texto guardado: clique com o botão direito para copiar";
             else if (state == "error") tip = "Erro: " + (message ?? "");
             else tip = "Voz pronta (" + hotkeyLabel + ")";
             if (tray != null)
@@ -803,8 +1040,9 @@ namespace TerminalDesign.Voice
             else if (message != null)
             {
                 // Short-lived notice (e.g. "nada reconhecido"), then hide.
-                overlay.ShowText(Clip(message, 44), state == "error" ? Red : Green);
-                var t = new System.Windows.Forms.Timer { Interval = 2200 };
+                overlay.ShowText(Clip(message, state == "blocked" ? 70 : 44), state == "error" ? Red : state == "blocked" ? Amber : Green);
+                // Blocked insertions stay visible longer so the user notices the text was kept.
+                var t = new System.Windows.Forms.Timer { Interval = state == "blocked" ? 6000 : 2200 };
                 t.Tick += delegate { t.Stop(); if (flash == t) { flash = null; overlay.Hide(); } t.Dispose(); };
                 flash = t;
                 t.Start();

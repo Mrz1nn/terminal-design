@@ -1,7 +1,19 @@
-// Hotkey string ("Ctrl+Alt+Space") -> RegisterHotKey modifiers + virtual-key code.
+// Hotkey string ("Ctrl+Shift+F9") -> RegisterHotKey modifiers + virtual-key code.
 // Pure logic, no Win32 here: the native host receives the two numbers.
 
 export const MOD = Object.freeze({ ALT: 0x1, CTRL: 0x2, SHIFT: 0x4, WIN: 0x8 });
+
+/**
+ * Default push-to-talk hotkey.
+ *
+ * Why not Ctrl+Alt+Space (the first default): Windows reports AltGr as Ctrl+Alt. On ABNT2 and
+ * other layouts that type characters with AltGr ("/", "?", "°"...), any Ctrl+Alt+<key> hotkey can
+ * fire while the user is typing (AltGr+Q then Space with AltGr still down).
+ * Ctrl+Shift+F9 has no Alt, so AltGr can never trigger it. F9 types nothing. No default binding
+ * was found in CMD, PowerShell, Windows Terminal or the Windows shell. A program that already
+ * registered it globally makes `td voice` fail with a clear message.
+ */
+export const DEFAULT_HOTKEY = 'Ctrl+Shift+F9';
 
 const MOD_ALIASES = {
   ctrl: 'CTRL', control: 'CTRL', ctl: 'CTRL',
@@ -81,7 +93,7 @@ export function parseHotkey(input) {
     key = resolveKey(tok);
     if (!key) throw new Error(`tecla desconhecida no atalho: "${tok}"`);
   }
-  if (!key) throw new Error(`atalho "${raw}" precisa de uma tecla principal (ex.: Ctrl+Alt+Space)`);
+  if (!key) throw new Error(`atalho "${raw}" precisa de uma tecla principal (ex.: ${DEFAULT_HOTKEY})`);
   const [vk, keyLabel] = key;
   const isFn = vk >= 0x70 && vk <= 0x87;
   if (mods.size === 0 && !isFn && !SOLO_OK.has(vk)) {
@@ -94,4 +106,19 @@ export function parseHotkey(input) {
   for (const m of mods) modifiers |= MOD[m];
   const ordered = MOD_ORDER.filter((m) => mods.has(m));
   return { modifiers, vk, label: [...ordered.map((m) => MOD_LABEL[m]), keyLabel].join('+'), keys: ordered };
+}
+
+/**
+ * Non-fatal warnings for a parsed hotkey (shown by `td voice` and `td doctor`).
+ * Ctrl+Alt (without Win) + a key that types something collides with AltGr on ABNT2-like layouts.
+ * The host also ignores the hotkey while AltGr (Right Alt) is down, but warn anyway.
+ */
+export function hotkeyWarnings(hk) {
+  const warnings = [];
+  const ctrlAlt = (hk.modifiers & (MOD.CTRL | MOD.ALT)) === (MOD.CTRL | MOD.ALT) && !(hk.modifiers & MOD.WIN);
+  const isFn = hk.vk >= 0x70 && hk.vk <= 0x87;
+  if (ctrlAlt && !isFn) {
+    warnings.push(`${hk.label}: no teclado ABNT2, AltGr equivale a Ctrl+Alt. O atalho é ignorado enquanto o AltGr está pressionado, mas é melhor usar algo como ${DEFAULT_HOTKEY}.`);
+  }
+  return warnings;
 }

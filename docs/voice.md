@@ -78,22 +78,35 @@ td doctor                # inclui as verificações de voz
 
 Com `td voice` rodando:
 
-- **push-to-talk** (padrão): segure `Ctrl+Alt+Space`, fale e solte. O texto é digitado assim que a transcrição termina.
+- **push-to-talk** (padrão): segure `Ctrl+Shift+F9`, fale e solte. O texto é digitado assim que a transcrição termina, na janela que estava em foco quando você começou a falar.
 - **toggle**: aperte o atalho para começar e de novo para parar (`--toggle` ou `voice.mode = "toggle"`).
 - A gravação para sozinha em `voice.maxSeconds` (60 s por padrão).
 - Gravações com menos de 0,3 s ou só com silêncio são descartadas sem chamar o whisper.
 
+### Proteções na hora de inserir o texto
+
+| Situação | O que acontece |
+|---|---|
+| Você trocou de janela entre começar a falar e o fim da transcrição | **Nada é digitado.** O texto fica guardado e o aviso "Inserção cancelada: a janela mudou" aparece no overlay e no console. |
+| O foco muda **no meio** da digitação | Para no bloco atual (no máximo 32 caracteres já enviados). O resto não é digitado e o texto inteiro fica guardado. |
+| Ctrl, Alt, AltGr, Shift, Win ou a tecla do atalho ainda pressionados | O host espera até 1,5 s você soltar. Se continuarem pressionados, **nada é digitado**, para que as letras nunca virem atalhos. O aviso diz quais teclas estavam pressionadas. |
+| Uma tecla é pressionada no meio da digitação | A digitação para do mesmo jeito que na troca de foco. |
+| O Windows aceita só parte das teclas enviadas | Toda tecla que o td apertou é solta em seguida. Nenhuma tecla fica presa. |
+| A mesma gravação pediria duas inserções | O host aceita só uma inserção por gravação, identificada pelo id dela, e recusa as repetições. |
+
+**Copiar o texto guardado:** aperte **Enter** no terminal onde o `td voice` está rodando ou clique com o botão direito no ícone da bandeja e escolha **Copiar última transcrição não inserida**. A área de transferência só é usada quando você pede. O texto fica só na memória e some ao encerrar o `td voice`.
+
 ### Indicadores
 
 - **Overlay**: uma faixa pequena acima da barra de tarefas mostra "● Gravando 3s" e depois "◌ Transcrevendo…". Ela nunca recebe foco, então o texto continua indo para a sua janela. Para desligar: `--no-overlay`.
-- **Bandeja**: o ícone fica cinza quando está pronto, vermelho gravando e âmbar transcrevendo. O menu do ícone tem "Sair". Para desligar: `--no-tray`.
+- **Bandeja**: o ícone fica cinza quando está pronto, vermelho gravando e âmbar transcrevendo ou com texto guardado. O menu do ícone tem "Copiar última transcrição não inserida" e "Sair". Para desligar: `--no-tray`.
 - **Console**: uma linha por evento, com o texto reconhecido e o tempo que levou.
 
 ### Configuração (`td config set voice.<chave> <valor>`)
 
 | Chave | Padrão | Valores |
 |---|---|---|
-| `voice.hotkey` | `Ctrl+Alt+Space` | modificadores `Ctrl`, `Alt`, `Shift`, `Win` + uma tecla (`A`-`Z`, `0`-`9`, `F1`-`F24`, `Space`, `Enter`, `Tab`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, setas, `` ` ``, `Pause`, `ScrollLock`, `Numpad0-9`…). `F1`-`F24`, `Pause` e `ScrollLock` funcionam sozinhas. Uma letra sem modificador, ou só com Shift, é recusada porque atrapalharia a digitação. |
+| `voice.hotkey` | `Ctrl+Shift+F9` | modificadores `Ctrl`, `Alt`, `Shift`, `Win` + uma tecla (`A`-`Z`, `0`-`9`, `F1`-`F24`, `Space`, `Enter`, `Tab`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, setas, `` ` ``, `Pause`, `ScrollLock`, `Numpad0-9`…). `F1`-`F24`, `Pause` e `ScrollLock` funcionam sozinhas. Uma letra sem modificador, ou só com Shift, é recusada porque atrapalharia a digitação. |
 | `voice.mode` | `push-to-talk` | `push-to-talk`, `toggle` |
 | `voice.language` | `pt` | `pt`, `en`, `auto` (o whisper detecta o idioma) |
 | `voice.model` | `base` | `tiny`, `base`, `small`, `medium` (todos multilíngues) |
@@ -101,6 +114,12 @@ Com `td voice` rodando:
 | `voice.insertMode` | `type` | `type` (teclas Unicode simuladas) ou `paste` (área de transferência + Ctrl+V) |
 | `voice.appendSpace` | `true` | coloca um espaço depois de cada trecho, para emendar frases |
 | `voice.maxSeconds` | `60` | 1 a 600 |
+
+#### Por que `Ctrl+Shift+F9`
+
+O padrão antigo era `Ctrl+Alt+Space`. O Windows trata o **AltGr como Ctrl+Alt**, e no teclado ABNT2 o AltGr digita caracteres (AltGr+Q = `/`, AltGr+W = `?`, AltGr+E = `°`). Por isso, um atalho `Ctrl+Alt+<tecla>` podia disparar a gravação no meio da digitação. O `Ctrl+Shift+F9` não usa Alt, então o AltGr nunca o aciona. F9 não digita nada, e o CMD, o PowerShell, o Windows Terminal e o Windows não usam essa combinação.
+
+Você pode usar outro atalho com `td config set voice.hotkey "<atalho>"`. Se escolher `Ctrl+Alt+<tecla que digita>`, o `td voice` e o `td doctor` avisam, e o host ignora o atalho enquanto o AltGr (Alt da direita) estiver pressionado. Um programa (uma extensão do VS Code, por exemplo) pode usar o mesmo atalho internamente. Nesse caso ele não recebe a combinação enquanto o `td voice` estiver rodando.
 
 Para mudar só uma vez, sem alterar a config, use os flags `--hotkey=`, `--toggle`, `--language=`, `--model=`, `--mic=`, `--paste`, `--no-space`.
 
@@ -123,10 +142,10 @@ td voice (Node)                         voice-host.ps1 -> voice-host.cs (Add-Typ
   text.js (limpeza)                       NotifyIcon + overlay WS_EX_NOACTIVATE
 ```
 
-- O host manda os eventos `ready`, `recording`, `audio {path, durationMs, peak}`, `cancelled`, `typed`, `warn`, `error` e `quit`. O Node responde com `type {text}`, `state {state, message}` e `quit`. O protocolo completo está em `apps/voice-engine/src/protocol.js`.
+- O host manda os eventos `ready`, `recording`, `audio {id, path, durationMs, peak}`, `cancelled`, `typed {id}`, `blocked {id, reason, keys}`, `copied`, `warn`, `error` e `quit`. O Node responde com `type {id, text}` (uma vez por gravação), `drop {id}`, `copy`, `state {state, message}` e `quit`. O protocolo completo está em `apps/voice-engine/src/protocol.js`.
 - Se o Node morrer, o stdin do host fecha e ele sai sozinho. Nada fica rodando para trás.
 - O helper C# é compilado na primeira execução, o que leva uns 2 s, e fica em cache por hash do código-fonte.
-- Antes de digitar, o host espera você soltar Ctrl, Alt, Shift e Win. Sem isso, "olá" com Ctrl+Alt ainda apertados viraria atalhos ou caracteres AltGr. Ao disparar um atalho que tem Alt ou Win, o host injeta uma tecla neutra (vk 0xE8, o mesmo truque do AutoHotkey), para que soltar o Alt não abra o menu da janela.
+- As regras de inserção ficam em `Typist.Insert` (voice-host.cs). Esse código acessa o Windows só pela interface `IInputEnv`, então os testes (`tests/voice-insert.test.js`) rodam com um ambiente falso: não digitam em nenhuma janela, não tocam na área de transferência real e não tocam som. Ao disparar um atalho que tem Alt ou Win, o host injeta uma tecla neutra (vk 0xE8, o mesmo truque do AutoHotkey), para que soltar o Alt não abra o menu da janela.
 
 ### API programática
 
@@ -136,6 +155,8 @@ import { resolveOptions, createEngine, test, listDevices, setup, status, doctor 
 const opts = resolveOptions({ config, overrides: { language: 'en' } });
 const engine = createEngine(opts);
 engine.on('transcript', ({ text }) => console.log(text));
+engine.on('blocked', ({ text, message }) => console.warn(message, text)); // texto não inserido
+engine.copyLast();             // copia o último texto não inserido
 await engine.start();          // resolve quando o atalho está registrado
 // ...
 await engine.stop();
@@ -143,13 +164,13 @@ await engine.stop();
 const { text } = await test(opts, { seconds: 5 }); // grava e transcreve, sem digitar
 ```
 
-Também são exportadas as funções puras `parseHotkey`, `cleanTranscript`, `buildWhisperArgs`, `parseLine`, `createLineDecoder` e `encodeCommand`.
+Também são exportadas as funções puras `parseHotkey`, `hotkeyWarnings`, `blockedMessage`, `cleanTranscript`, `buildWhisperArgs`, `parseLine`, `createLineDecoder` e `encodeCommand`.
 
 ## Limitações conhecidas
 
 - **Janelas elevadas (administrador)**: o Windows (UIPI) descarta em silêncio o `SendInput` que um processo comum manda para uma janela elevada. Se o terminal em foco estiver rodando como administrador, rode o `td voice` também como administrador. O host avisa quando detecta esse caso, mas a detecção é por melhor esforço.
 - **A tela de login, o UAC e alguns jogos ou anti-cheat** não aceitam entrada simulada.
-- **O texto vai para a janela que está em foco no momento de digitar**, não para a que estava em foco quando você apertou o atalho. Se você trocar de janela durante a transcrição, o texto vai para a nova.
+- **Foco dentro da mesma janela**: o td compara a janela de primeiro nível. Se você trocar de aba ou de painel dentro do mesmo programa (abas do Windows Terminal, editor e terminal do VS Code), ele não percebe a troca, e o texto vai para onde estiver o cursor.
 - **O atalho é exclusivo**: se outro programa já registrou a combinação, o `td voice` avisa e não inicia. Escolha outra com `--hotkey=`. A mesma combinação também deixa de chegar aos outros programas enquanto o `td voice` estiver rodando.
 - **Nomes de microfone**: a API waveIn corta os nomes em 31 caracteres e os índices podem mudar quando você conecta ou desconecta um dispositivo. Prefira escolher por parte do nome. Com `default`, o que vale é o microfone padrão de *Configurações > Som > Entrada*. Se você mudar o microfone padrão enquanto o `td voice` estiver rodando, a mudança vale a partir da próxima gravação.
 - **Modo `paste`**: antes de colar, o host copia todos os formatos que estão na área de transferência e depois os devolve. Alguns programas só entregam o conteúdo quando ele é colado de fato ("delayed rendering"); nesses casos a cópia não é possível. Então o host não mexe na área de transferência e digita o texto como no modo `type`, com um aviso no console. A restauração devolve os mesmos dados, mas o Windows passa a considerar o Terminal-Design como dono desse conteúdo. Alguns programas usam outro atalho para colar (no CMD clássico antigo, por exemplo, Ctrl+V depende de "Usar Ctrl+Shift+C/V").

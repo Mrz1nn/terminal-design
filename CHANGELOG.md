@@ -4,6 +4,15 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 ## [Não lançado]
 
+### Segurança (Voice Engine)
+- **R1:** o texto só é inserido na janela que estava em foco quando a gravação começou. Se o foco mudar antes ou durante a digitação, nada mais é digitado e o texto fica guardado para cópia manual (Enter no terminal ou menu da bandeja). O aviso aparece no overlay e no console.
+- **R2:** se Ctrl, Alt, AltGr, Shift, Win ou a tecla do atalho continuarem pressionados depois de 1,5 s, a inserção é cancelada, para que nenhum atalho dispare sem querer. Toda tecla injetada é solta mesmo quando o Windows aceita só parte do envio.
+- Cada gravação recebe um id e só pode ser inserida uma vez.
+- A inserção agora usa a interface `IInputEnv`, testada com um ambiente falso (27 testes do host, sem digitar em janelas reais).
+
+### Mudado
+- **R3:** o atalho padrão da voz passou de `Ctrl+Alt+Space` para `Ctrl+Shift+F9`, que não conflita com o AltGr do teclado ABNT2. Atalhos `Ctrl+Alt+<tecla>` geram um aviso e são ignorados enquanto o AltGr está pressionado.
+
 ## [0.1.0] - 2026-11-11
 
 ### Adicionado

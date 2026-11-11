@@ -41,7 +41,7 @@ export const DEFAULTS = Object.freeze({
   },
   voice: {
     enabled: true,
-    hotkey: 'Ctrl+Alt+Space',
+    hotkey: 'Ctrl+Shift+F9', // no Alt: AltGr (= Ctrl+Alt on ABNT2) can never trigger it
     mode: 'push-to-talk', // push-to-talk | toggle
     language: 'pt', // pt | en | auto
     model: 'base', // tiny | base | small | medium (multilingual whisper.cpp models)
