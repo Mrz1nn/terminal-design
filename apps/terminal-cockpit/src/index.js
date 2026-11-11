@@ -53,7 +53,8 @@ async function updateNotice(config) {
   try {
     const mod = await import('../../../packages/updater/src/index.js');
     // Must be cache-only (no network) so the status line never waits on GitHub.
-    return typeof mod.getUpdateNotice === 'function' ? await mod.getUpdateNotice({ config, offline: true }) : null;
+    if (typeof mod.getUpdateInfo === 'function') return mod.getUpdateInfo({ config, offline: true });
+    return typeof mod.getUpdateNotice === 'function' ? mod.getUpdateNotice({ config, offline: true }) : null;
   } catch {
     return null;
   }

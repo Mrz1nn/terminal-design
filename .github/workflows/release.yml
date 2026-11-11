@@ -33,7 +33,7 @@ jobs:
           if ($tag -ne "v$version") { throw "tag $tag does not match package.json version $version" }
 
       - name: Tests
-        run: node --test tests/
+        run: node --test
 
       - name: Pack
         run: node scripts/pack-release.js

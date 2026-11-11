@@ -22,7 +22,7 @@ function box(lines, theme, ui, title) {
 async function updateLine(ctx) {
   try {
     const mod = await import('../../../updater/src/index.js');
-    if (typeof mod.getUpdateNotice === 'function') return await mod.getUpdateNotice({ config: ctx.config, offline: true });
+    if (typeof mod.getUpdateInfo === 'function') return mod.getUpdateInfo({ config: ctx.config, offline: true });
   } catch { /* updater not available */ }
   return null;
 }
@@ -70,9 +70,16 @@ export default {
 
     // Installation
     const st = cc.status(paths);
-    const notice = await updateLine(ctx);
+    const info = await updateLine(ctx);
+    // Update "button": Ctrl+click opens the release notes (OSC 8), the command installs it.
+    let notice = null;
+    if (info) {
+      const label = `[ ↑ atualizar para ${info.version} ]`;
+      const button = info.url && ui.mode !== 'none' ? `\x1b]8;;${info.url}\x07${ui.c.bold(ui.c.warning(label))}\x1b]8;;\x07` : ui.c.bold(ui.c.warning(label));
+      notice = `${button} ${ui.c.accent(info.command)}`;
+    }
     const inst = [
-      `${ui.c.muted('versão')}       ${ctx.version} ${ui.c.muted(`(${ctx.mode})`)}${notice ? `  ${ui.c.warning(notice)}` : ''}`,
+      `${ui.c.muted('versão')}       ${ctx.version} ${ui.c.muted(`(${ctx.mode})`)}${notice ? `  ${notice}` : ''}`,
       `${ui.c.muted('tema')}         ${theme.displayName ?? theme.name}`,
       `${ui.c.muted('claude code')}  ${st.installed ? ui.c.success('status line ativa') : ui.c.muted('não integrado')}`,
       `${ui.c.muted('voz')}          ${config.voice.enabled ? `${config.voice.hotkey} · ${config.voice.language}` : ui.c.muted('desativada')}`,

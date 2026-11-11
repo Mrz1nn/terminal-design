@@ -1,30 +1,68 @@
 # Terminal-Design
 
-Cockpit de terminal open source para Windows 10 e 11. Ele mostra uma status line organizada no Claude Code, oferece 10 temas, se atualiza pelo próprio terminal e tem digitação por voz que funciona offline.
+Um cockpit para o terminal do Windows. Ele mostra uma status line organizada no Claude Code, traz 10 temas de cores, digita por voz sem internet e se atualiza com um único comando.
 
-- **100% gratuito, licença MIT**, sem assinatura e sem API paga
-- **Zero dependências npm em tempo de execução**: só Node.js e recursos do Windows
-- **Offline**: os downloads só acontecem quando você pede (`td update`, `td voice setup`). Por padrão, uma consulta leve às releases públicas no GitHub verifica, no máximo uma vez por dia e em segundo plano, se existe versão nova. Ela só avisa e nunca instala. Para desligar: `td config set update.auto off`.
-- **Sem telemetria**
+Gratuito, open source (licença MIT), sem assinatura, sem API paga e sem telemetria.
 
 ```
 Opus 5.5 high think │ ctx ━━━━──────── 34% 340k/1M │ 5h ━━━── 62% ↻2h15m │ 7d ━──── 18% ↻4d
 meu-projeto │ ⎇ main +2 ~3 ?1 ↑1 │ +128 −42 │ $1.23 est. │ ⏱ 31m
 ```
 
-## O que tem
+## Sumário
 
-| Módulo | O que faz |
+1. [O que ele faz](#o-que-ele-faz)
+2. [Requisitos](#requisitos)
+3. [Instalação](#instalação)
+4. [Primeiros passos](#primeiros-passos)
+5. [Atualizações](#atualizações)
+6. [Comandos](#comandos)
+7. [Status line do Claude Code](#status-line-do-claude-code)
+8. [Temas](#temas)
+9. [Digitação por voz](#digitação-por-voz)
+10. [Configuração](#configuração)
+11. [Desinstalar](#desinstalar)
+12. [Privacidade e segurança](#privacidade-e-segurança)
+13. [Problemas comuns](#problemas-comuns)
+14. [Estrutura do projeto](#estrutura-do-projeto)
+15. [Como contribuir](#como-contribuir)
+16. [Licença](#licença)
+
+## O que ele faz
+
+| Recurso | Descrição |
 |---|---|
-| **Terminal Cockpit** | Status line do Claude Code em 1, 2 ou 3 linhas agrupadas: modelo, esforço, contexto, limites de 5h e 7d com o tempo até a renovação, git, alterações, custo estimado e duração. Também desenha o painel de subagentes. |
-| **Temas** | Midnight, Dracula, Nord, Tokyo Night, Catppuccin, Gruvbox, One Dark, Monokai, Solarized e Terminal Classic. Permite personalizar cada cor, as barras, os separadores e as bordas. Importa e exporta temas e envia para o Windows Terminal e o VS Code. |
-| **CLI `td`** | Painel, temas, configuração, diagnóstico, atualização e desinstalação. |
-| **Update Engine** | Usa os GitHub Releases. Confere o SHA-256, faz backup e preserva a sua configuração. Se algo falhar, volta para a versão anterior. Nunca atualiza sem perguntar. |
-| **Voice Engine** | Push-to-talk com atalho global e whisper.cpp local, em português e inglês. Insere o texto no cursor do CMD, PowerShell, Windows Terminal e VS Code. Nenhum áudio sai do computador. |
+| Status line | Mostra no Claude Code o modelo, o esforço, o uso do contexto, os limites de 5 horas e de 7 dias com o tempo até renovar, o git, as linhas alteradas, o custo estimado e a duração da sessão. Organiza tudo em 1, 2 ou 3 linhas. |
+| Painel de agentes | Mostra uma linha por subagente, com o estado, o uso de contexto, o tempo e o progresso. |
+| Temas | Traz 10 temas prontos. Você pode mudar qualquer cor, as barras, os separadores e as bordas, e também importar e exportar temas. Envia as cores para o Windows Terminal e para o VS Code. |
+| Comando `td` | Abre um painel com as informações disponíveis e gerencia temas, configuração, atualização, voz e diagnóstico. |
+| Atualização | Quando sai uma versão nova, um botão aparece na status line. O comando `td update` baixa a versão, confere a integridade e instala sem mexer na sua configuração. |
+| Voz | Você segura um atalho, fala e solta, e o texto é digitado onde está o cursor. A transcrição é feita no seu computador, em português ou inglês. |
+
+## Requisitos
+
+1. Windows 10 ou 11.
+2. [Node.js](https://nodejs.org/pt-br/download) 18.17 ou mais novo. A versão LTS é a recomendada.
+3. Para a status line: [Claude Code](https://code.claude.com) instalado.
+4. Para a voz: um microfone e o Microsoft Visual C++ Redistributable x64, que a maioria dos computadores já tem. O `td doctor` avisa se estiver faltando.
+
+Não precisa de permissão de administrador.
 
 ## Instalação
 
-Requisitos: Windows 10 ou 11 e [Node.js](https://nodejs.org) 18.17 ou mais novo.
+### Opção 1: baixar a versão pronta
+
+1. Abra a página de [Releases](https://github.com/Mrz1nn/terminal-design/releases/latest).
+2. Baixe o arquivo `terminal-design-<versão>.zip`.
+3. Clique com o botão direito no zip, escolha **Extrair tudo** e abra a pasta extraída.
+4. Clique com o botão direito em um espaço vazio da pasta e escolha **Abrir no Terminal**.
+5. Rode:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -ClaudeCode
+```
+
+### Opção 2: clonar com git
 
 ```powershell
 git clone https://github.com/Mrz1nn/terminal-design.git
@@ -32,78 +70,292 @@ cd terminal-design
 powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -ClaudeCode
 ```
 
-Abra um terminal novo e rode:
+### O que o instalador faz
+
+1. Confere se o Node.js está instalado e na versão certa.
+2. Copia o programa para `%LOCALAPPDATA%\TerminalDesign\versions\<versão>`.
+3. Cria a sua configuração em `%APPDATA%\TerminalDesign\config.json`. Ele só cria o arquivo se ainda não existir e nunca o sobrescreve.
+4. Adiciona o comando `td` ao PATH do seu usuário.
+5. Com `-ClaudeCode`, liga a status line no Claude Code. Antes de mexer, ele faz um backup do `settings.json` e guarda a status line que você tinha, para devolver se um dia você desinstalar.
+6. Roda um diagnóstico no final.
+
+Opções do instalador:
+
+| Opção | Efeito |
+|---|---|
+| `-ClaudeCode` | Também instala a status line no Claude Code |
+| `-Theme nord` | Já escolhe um tema |
+| `-NoPath` | Não mexe no PATH. Nesse caso, use o caminho completo do `td.cmd`. |
+
+Pode rodar o instalador de novo quantas vezes quiser. A sua configuração continua igual.
+
+## Primeiros passos
+
+Abra um terminal **novo** (para o PATH valer) e rode:
 
 ```powershell
-td                # painel
-td theme          # escolher tema
-td doctor         # conferir a instalação
+td            # painel principal
+td theme      # escolher um tema numa lista com amostras de cor
+td doctor     # conferir se está tudo certo
 ```
 
-Os detalhes estão em [docs/installation.md](docs/installation.md).
+A status line aparece na próxima mensagem que você mandar no Claude Code.
+
+## Atualizações
+
+Você não precisa reinstalar nada para receber versões novas.
+
+**Como você fica sabendo:** uma vez por dia, em segundo plano, o Terminal-Design consulta as releases públicas deste repositório. A consulta é anônima, sem token e sem dados pessoais. Quando existe uma versão mais nova, aparece um botão na status line do Claude Code e no painel `td`:
+
+```
+[ ↑ atualizar para 0.2.0 ] td update
+```
+
+Com Ctrl+clique no botão, a página com as novidades da versão abre no navegador.
+
+**Como atualizar:**
+
+```powershell
+td update            # mostra o que mudou e pede confirmação
+td update --yes      # atualiza sem perguntar
+td update --check    # só verifica, sem instalar
+td update --rollback # volta para a versão anterior
+```
+
+**O que acontece numa atualização:**
+
+1. O pacote é baixado da página de Releases do GitHub.
+2. O SHA-256 do pacote é conferido com o arquivo `SHA256SUMS.txt` da release. Se não bater, a atualização é recusada.
+3. A sua configuração recebe um backup antes de qualquer mudança.
+4. A versão nova é instalada ao lado da atual e testada. Só depois ela é ativada.
+5. Se algo der errado, a versão anterior continua funcionando.
+6. Temas próprios e a configuração ficam em outra pasta e nunca são tocados.
+
+Nada é instalado sem você mandar. Para desligar o aviso:
+
+```powershell
+td config set update.auto off
+```
+
+Para religar: `td config set update.auto notify`. Se você usa a versão clonada com git, o aviso sugere `git pull` em vez de `td update`.
 
 ## Comandos
 
 | Comando | O que faz |
 |---|---|
-| `td` | Painel principal com os dados reais da última atualização do Claude Code, o estado do git e a instalação |
+| `td` | Painel com a última atualização recebida do Claude Code, o git da pasta atual e o estado da instalação |
 | `td help` | Lista todos os comandos |
+| `td <comando> --help` | Mostra os detalhes de um comando |
 | `td version` | Mostra a versão instalada |
-| `td update` / `td update --check` | Atualiza / só verifica |
-| `td theme` / `list` / `set <nome>` / `preview` / `import` / `export` / `wt` | Gerencia os temas |
-| `td config` / `get` / `set` / `edit` / `reset` / `path` | Gerencia as configurações |
-| `td claude install` / `uninstall` / `status` | Integração com o Claude Code |
-| `td voice` / `setup` / `devices` / `test` / `status` | Digitação por voz |
-| `td doctor` | Diagnóstico da instalação |
-| `td uninstall` | Remove o Terminal-Design (pergunta antes se deve manter a sua configuração) |
+| `td update` | Atualiza (veja [Atualizações](#atualizações)) |
+| `td theme` | Escolhe o tema numa lista |
+| `td theme list` | Lista os temas |
+| `td theme set <nome>` | Aplica um tema. Com `--wt`, envia as cores ao Windows Terminal. |
+| `td theme preview <nome>` | Mostra a status line com o tema, usando dados de exemplo |
+| `td theme import <arquivo>` | Instala um tema a partir de um arquivo `.json` |
+| `td theme export <nome> <arquivo>` | Exporta um tema. Com `--vscode`, gera as cores para o VS Code. |
+| `td theme wt` | Envia todos os temas ao Windows Terminal |
+| `td config` | Mostra a configuração |
+| `td config set <chave> <valor>` | Muda um valor |
+| `td config edit` | Abre o arquivo de configuração no editor |
+| `td claude install` | Liga a status line no Claude Code |
+| `td claude uninstall` | Desliga e devolve a status line que você tinha antes |
+| `td voice` | Inicia a digitação por voz |
+| `td voice setup` | Baixa os arquivos da voz |
+| `td voice test` | Grava alguns segundos e mostra o texto, sem digitar nada |
+| `td doctor` | Diagnóstico completo |
+| `td uninstall` | Remove o Terminal-Design |
 
-## Métricas: o que é real e o que é estimativa
+Para tirar as cores de qualquer comando, use `--no-color` ou defina a variável `NO_COLOR`.
 
-O cockpit só mostra o que o Claude Code envia oficialmente para a status line ([documentação](https://code.claude.com/docs/en/statusline)):
+## Status line do Claude Code
 
-| Informação | Fonte | Observação |
+### Layouts
+
+```powershell
+td config set cockpit.layout compact   # 1 linha
+td config set cockpit.layout cockpit   # 2 linhas (padrão)
+td config set cockpit.layout full      # 3 linhas
+```
+
+Também dá para escolher os itens de cada linha:
+
+```powershell
+td config set cockpit.layout custom
+td config set cockpit.rows '[["model","context","limit5h"],["dir","git","cost"]]'
+```
+
+Para esconder um item: `td config set cockpit.hide '["cost"]'`.
+
+### O que é real e o que é estimativa
+
+O Terminal-Design só mostra o que o Claude Code envia oficialmente para a status line e o que vem do próprio computador, como o git. Nenhum número é inventado.
+
+| Informação | Origem | Observação |
 |---|---|---|
-| Modelo, esforço, thinking, fast mode | Payload oficial | |
-| Contexto (%, tokens, tamanho) | `context_window` | Valor real |
-| Limite de 5h e 7d, com o tempo até a renovação | `rate_limits` | Só aparece em planos Pro, Max e Ultra, depois da primeira resposta |
-| Limite de gasto (diário, semanal ou mensal) | `rate_limits.spend_limit` | Só aparece atrás de um gateway do Claude apps |
-| **Limite mensal da assinatura** | Não existe no payload | Nunca é exibido como número. Com `cockpit.showUnavailable` aparece como `n/d`. |
-| **Modo de permissão** | Não existe no payload | Fica `n/d` |
-| Custo `$ est.` | `cost.total_cost_usd` | Estimativa do Claude Code a preço de API. Não é cobrança. |
-| Git | `git status` local | Fica em cache por 3 s |
+| Modelo, esforço, thinking | Claude Code | |
+| Contexto usado e tamanho da janela | Claude Code | Valor real |
+| Limites de 5 horas e de 7 dias, com o tempo até renovar | Claude Code | Aparece nos planos Pro, Max e Ultra, depois da primeira resposta. Some quando passa a hora da renovação, até chegar um dado novo. |
+| Limite de gasto | Claude Code | Só aparece para quem usa um gateway corporativo |
+| Limite mensal da assinatura | Não existe | O Claude Code não informa esse dado, então ele nunca aparece como número |
+| Custo `$ est.` | Claude Code | Estimativa a preço de API. Não é cobrança. |
+| Git | Seu computador | |
 
-Quando falta um dado, o widget some. Nada é inventado.
+Os itens sem dado somem. Para ver `n/d` no lugar deles: `td config set cockpit.showUnavailable true`.
 
-## Estrutura
+## Temas
+
+Temas prontos: Midnight (padrão), Dracula, Nord, Tokyo Night, Catppuccin, Gruvbox, One Dark, Monokai, Solarized e Terminal Classic.
+
+```powershell
+td theme set tokyo-night
+```
+
+Para mudar só algumas cores sem criar um tema:
+
+```powershell
+td config set theme.overrides.palette.primary "#ff8800"
+td config set theme.overrides.style.bar.width 12
+td config set theme.overrides.style.border square
+```
+
+Para criar um tema seu:
+
+```powershell
+td theme export dracula meu-tema.json --as meu-tema
+# edite meu-tema.json
+td theme import meu-tema.json
+td theme set meu-tema
+```
+
+No **Windows Terminal**, rode `td theme wt` e escolha `TD <tema>` em Configurações, Perfil, Aparência, Esquema de cores. O arquivo de configuração do Windows Terminal não é alterado.
+
+No **VS Code**, rode `td theme export tokyo-night cores.json --vscode` e cole o conteúdo no `settings.json` do VS Code.
+
+Os detalhes estão em [docs/themes.md](docs/themes.md).
+
+## Digitação por voz
+
+```powershell
+td voice setup   # baixa o transcritor e o modelo (pergunta antes, mostra tamanho e origem)
+td voice test    # grava 5 segundos e mostra o texto, sem digitar nada
+td voice         # inicia
+```
+
+Com o `td voice` rodando, segure **Ctrl+Shift+F9**, fale e solte. O texto aparece onde está o cursor: CMD, PowerShell, Windows Terminal, VS Code e outros programas.
+
+Proteções:
+
+1. O texto só vai para a janela que estava em foco quando você começou a falar. Se você trocar de janela, nada é digitado e o texto fica guardado.
+2. Se alguma tecla como Ctrl, Alt ou Shift estiver pressionada na hora de digitar, nada é digitado. Assim as letras nunca viram atalhos.
+3. Para copiar um texto guardado, aperte Enter no terminal do `td voice` ou use o menu do ícone perto do relógio.
+4. O áudio nunca sai do computador e é apagado assim que a transcrição termina.
+
+O atalho é configurável: `td config set voice.hotkey "Ctrl+Shift+F8"`. O idioma também: `td config set voice.language en`. O guia completo está em [docs/voice.md](docs/voice.md).
+
+## Configuração
+
+O arquivo fica em `%APPDATA%\TerminalDesign\config.json` e guarda só o que você mudou. Os principais valores:
+
+| Chave | Padrão | Valores |
+|---|---|---|
+| `theme.name` | `midnight` | Qualquer tema de `td theme list` |
+| `cockpit.layout` | `cockpit` | `compact`, `cockpit`, `full`, `custom` |
+| `cockpit.locale` | `pt-BR` | `pt-BR`, `en` |
+| `update.auto` | `notify` | `notify` (avisa) ou `off` |
+| `update.channel` | `stable` | `stable` ou `prerelease` |
+| `voice.hotkey` | `Ctrl+Shift+F9` | Qualquer combinação válida |
+| `voice.language` | `pt` | `pt`, `en`, `auto` |
+| `voice.model` | `base` | `tiny`, `base`, `small`, `medium` |
+
+A lista completa está em [docs/configuration.md](docs/configuration.md).
+
+## Desinstalar
+
+```powershell
+td uninstall           # pergunta antes de cada passo
+td uninstall --yes     # remove sem perguntar e mantém a configuração
+td uninstall --purge   # remove também a configuração, os temas próprios e os backups
+```
+
+A desinstalação faz o seguinte:
+
+1. Desliga a status line no Claude Code e devolve a que você tinha antes.
+2. Tira o `td` do PATH.
+3. Apaga só as pastas criadas pelo Terminal-Design.
+
+## Privacidade e segurança
+
+1. Não há telemetria.
+2. A internet só é usada para:
+   - a consulta diária de versão nova, que pode ser desligada;
+   - o `td update`;
+   - o `td voice setup`.
+   Os dois últimos sempre pedem confirmação.
+3. Todo pacote baixado tem o hash conferido antes de ser usado.
+4. Antes de mudar qualquer arquivo de outro programa, o Terminal-Design faz backup. Se o arquivo estiver com erro, ele não mexe.
+5. O código não tem dependências de terceiros em tempo de execução.
+
+Para relatar uma falha de segurança, veja [SECURITY.md](SECURITY.md).
+
+## Problemas comuns
+
+**O comando `td` não é encontrado.**
+Abra um terminal novo. Se ainda não funcionar, rode `"%LOCALAPPDATA%\TerminalDesign\bin\td.cmd" doctor`.
+
+**O Windows bloqueou o script de instalação.**
+Use exatamente o comando com `-ExecutionPolicy Bypass` mostrado em [Instalação](#instalação). Ele vale só para essa execução e não muda nada no seu sistema.
+
+**A status line não aparece no Claude Code.**
+Rode `td claude status`. Se aparecer como não instalada, rode `td claude install` e mande uma mensagem nova no Claude Code.
+
+**Os limites de 5 horas e de 7 dias não aparecem.**
+Eles só existem para os planos Pro, Max e Ultra, e chegam depois da primeira resposta da sessão.
+
+**A voz não digita em um programa.**
+Programas abertos como administrador não aceitam digitação de programas comuns. Abra o `td voice` também como administrador, ou abra o programa sem ser administrador.
+
+**Quero voltar para a versão anterior.**
+Rode `td update --rollback`.
+
+## Estrutura do projeto
 
 ```
 apps/terminal-cockpit   status line e painel de agentes
-apps/voice-engine       voz: host nativo em PowerShell/C# + whisper.cpp
-packages/core           caminhos, I/O atômico, semver, ANSI, registro de módulos
-packages/config         configuração central (padrões + arquivo do usuário)
-packages/themes         motor de temas, validação, import/export
-packages/updater        GitHub Releases, verificação, troca de versão e rollback
+apps/voice-engine       digitação por voz
+packages/core           base comum: caminhos, arquivos, versões, cores
+packages/config         configuração central
+packages/themes         motor de temas
+packages/updater        instalação, atualização e desinstalação
 packages/cli            comando td
-integrations/           claude-code, windows-terminal, vscode
-themes/                 temas embutidos + theme.schema.json
-docs/  scripts/  tests/  .github/
+integrations/           Claude Code, Windows Terminal, VS Code
+themes/                 temas prontos e o formato dos temas
+docs/                   documentação
+scripts/                instalador e empacotamento
+tests/                  testes automatizados
 ```
 
-A arquitetura está explicada em [docs/architecture.md](docs/architecture.md).
+Documentação técnica:
 
-## Documentação
-
+- [Arquitetura](docs/architecture.md)
 - [Instalação](docs/installation.md)
 - [Atualização](docs/updating.md)
 - [Configuração](docs/configuration.md)
 - [Temas](docs/themes.md)
-- [Integração com o Claude Code](docs/claude-code.md)
-- [Voice Engine](docs/voice.md)
-- [Arquitetura](docs/architecture.md)
-- [Como contribuir](CONTRIBUTING.md)
-- [Segurança](SECURITY.md)
-- [Avisos de terceiros](THIRD_PARTY_NOTICES.md)
+- [Claude Code](docs/claude-code.md)
+- [Voz](docs/voice.md)
+
+## Como contribuir
+
+Ideias, correções e temas novos são bem-vindos. As regras e o passo a passo estão em [CONTRIBUTING.md](CONTRIBUTING.md). Para testar localmente:
+
+```powershell
+git clone https://github.com/Mrz1nn/terminal-design.git
+cd terminal-design
+npm test
+node bin/td.js doctor
+```
 
 ## Licença
 
-[MIT](LICENSE). As paletas de cores e os componentes baixados sob demanda têm as licenças listadas em [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[MIT](LICENSE). Os créditos das paletas de cores e dos componentes baixados sob demanda estão em [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

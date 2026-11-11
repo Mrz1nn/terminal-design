@@ -217,9 +217,15 @@ export const WIDGETS = [
   {
     id: 'update',
     group: 'meta',
-    priority: 55,
-    render(d, { paint }) {
-      return d.updateNotice ? paint.color('warning', d.updateNotice) : null;
+    priority: 65,
+    render(d, { paint, L }) {
+      const u = d.updateNotice;
+      if (!u) return null;
+      if (typeof u === 'string') return paint.color('warning', u);
+      // Update "button": clickable (OSC 8) to the release notes, plus the command that installs it.
+      const button = paint.strong('warning', `[ ↑ ${L.update} ${u.version} ]`);
+      const link = u.url && paint.mode !== 'none' ? `]8;;${u.url}${button}]8;;` : button;
+      return `${link} ${paint.color('accent', u.command)}`;
     },
   },
 ];

@@ -99,7 +99,19 @@ export function spawnBackgroundCheck(paths, { now = Date.now() } = {}) {
  * Every option is optional (`offline` is accepted for clarity: this function is always offline).
  * background=false also skips starting the detached refresh (tests).
  */
-export function getUpdateNotice({ paths = getPaths(), config, currentVersion, mode, now = Date.now(), background = true, env = process.env, pkg } = {}) {
+export function getUpdateNotice(opts = {}) {
+  const info = getUpdateInfo(opts);
+  if (!info) return null;
+  return info.mode === 'dev'
+    ? `Terminal-Design ${info.version} disponível (git pull)`
+    : `Terminal-Design ${info.version} disponível: rode td update`;
+}
+
+/**
+ * Structured version of getUpdateNotice for UIs that draw an update "button":
+ * { version, current, url (release page or null), command, mode } or null. Same rules: no network.
+ */
+export function getUpdateInfo({ paths = getPaths(), config, currentVersion, mode, now = Date.now(), background = true, env = process.env, pkg } = {}) {
   try {
     if (!currentVersion) currentVersion = runningVersion();
     if (!mode) mode = installMode(paths);
@@ -108,12 +120,11 @@ export function getUpdateNotice({ paths = getPaths(), config, currentVersion, mo
     try { repo = resolveRepo(config, pkg ?? readPackage()); } catch { return null; }
     const cache = readUpdateCache(paths);
     if (!isFresh(cache, config, repo, now) && background) spawnBackgroundCheck(paths, { now });
-    const latest = cache?.repo === repo && cache?.channel === channelOf(config) ? cache?.latest?.version : null;
-    if (!latest || !parseSemver(latest) || !parseSemver(currentVersion)) return null;
-    if (compareSemver(latest, currentVersion) <= 0) return null;
-    return mode === 'dev'
-      ? `Terminal-Design ${latest} disponível (git pull)`
-      : `Terminal-Design ${latest} disponível: rode td update`;
+    const latest = cache?.repo === repo && cache?.channel === channelOf(config) ? cache?.latest : null;
+    if (!latest?.version || !parseSemver(latest.version) || !parseSemver(currentVersion)) return null;
+    if (compareSemver(latest.version, currentVersion) <= 0) return null;
+    const url = typeof latest.url === 'string' && /^https:\/\/github\.com\//.test(latest.url) ? latest.url : null;
+    return { version: latest.version, current: currentVersion, url, command: mode === 'dev' ? 'git pull' : 'td update', mode };
   } catch {
     return null;
   }
