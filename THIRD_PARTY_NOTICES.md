@@ -27,8 +27,13 @@ Nada disso vem dentro do repositório. Os arquivos só são baixados por `td voi
 
 | Componente | Fonte | Licença |
 |---|---|---|
-| whisper.cpp (binários para Windows) | github.com/ggml-org/whisper.cpp | MIT |
+| whisper.cpp (`whisper-cli.exe`, `whisper.dll`) | github.com/ggml-org/whisper.cpp | MIT, © The ggml authors |
+| ggml (`ggml.dll`, `ggml-base.dll`, `ggml-cpu-*.dll`) | github.com/ggml-org/ggml (no mesmo pacote) | MIT, © The ggml authors |
 | Modelos ggml do Whisper | huggingface.co/ggerganov/whisper.cpp, convertidos dos pesos do OpenAI Whisper | MIT (OpenAI Whisper) |
+
+O zip oficial do whisper.cpp também traz `SDL2.dll` (licença zlib), `llama.dll`, `parakeet.dll` e programas de demonstração. O `td voice setup` **apaga todos esses arquivos** logo depois de extrair o zip. Só ficam o `whisper-cli.exe`, o `whisper.dll` e as `ggml*.dll`.
+
+**Pré-requisito do sistema (não é distribuído pelo Terminal-Design):** Microsoft Visual C++ 2015-2022 Redistributable x64, que tem licença da Microsoft. O `td doctor` avisa quando ele está faltando.
 
 Os detalhes e os hashes de verificação estão em `docs/voice.md`.
 

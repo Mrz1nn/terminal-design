@@ -17,6 +17,8 @@ function limitWidget(id, label, pick, priority) {
     render(d, { paint, L, na, now, theme }) {
       const l = pick(d);
       if (!l) return na(L[label]);
+      // After the reset time the old percentage is no longer true; hide until Claude Code sends a new one.
+      if (l.resetsAt !== null && l.resetsAt * 1000 <= now) return na(L[label]);
       const w = Math.max(3, Math.round(theme.style.bar.width / 2));
       const reset = untilEpoch(l.resetsAt, now);
       return [
@@ -63,6 +65,7 @@ export const WIDGETS = [
     render(d, { paint, L, now }) {
       const s = d.limits.spend;
       if (!s) return null; // only exists behind a Claude apps gateway
+      if (s.resetsAt !== null && s.resetsAt * 1000 <= now) return null; // stale after reset
       const money = s.usedUsd !== null && s.limitUsd !== null ? paint.color('muted', `$${s.usedUsd.toFixed(0)}/$${s.limitUsd.toFixed(0)}`) : '';
       const period = s.period ? paint.color('muted', L.periods[s.period] ?? s.period) : '';
       const reset = untilEpoch(s.resetsAt, now);

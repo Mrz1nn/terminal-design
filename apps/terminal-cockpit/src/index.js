@@ -13,7 +13,11 @@ export function readStdin(timeoutMs = 2000) {
   return new Promise((resolve) => {
     if (process.stdin.isTTY) return resolve('');
     let data = '';
-    const timer = setTimeout(() => resolve(data), timeoutMs);
+    // On timeout, destroy stdin so an open pipe can't keep the process (and Claude Code) waiting.
+    const timer = setTimeout(() => {
+      process.stdin.destroy();
+      resolve(data);
+    }, timeoutMs);
     process.stdin.setEncoding('utf8');
     process.stdin.on('data', (c) => { data += c; });
     process.stdin.on('end', () => { clearTimeout(timer); resolve(data); });
@@ -63,6 +67,7 @@ export async function runStatusLine({ subagent = false } = {}) {
   let raw = {};
   try {
     raw = text.trim() ? JSON.parse(text) : {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) raw = {};
   } catch {
     process.stdout.write('terminal-design: JSON inválido recebido do Claude Code');
     return 0;

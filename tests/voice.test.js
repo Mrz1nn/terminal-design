@@ -13,7 +13,7 @@ import { parseLine, createLineDecoder, encodeCommand } from '../apps/voice-engin
 import { buildHostArgs, eventName } from '../apps/voice-engine/src/host.js';
 import { MODELS, PINNED_RELEASE, pickRelease, modelUrl, formatBytes, download, resolveModel, resolveWhisperBinary } from '../apps/voice-engine/src/assets.js';
 import { resolveOptions, cleanTempDir } from '../apps/voice-engine/src/engine.js';
-import { planSetup, runSetup } from '../apps/voice-engine/src/setup.js';
+import { planSetup, runSetup, pruneWhisperDir } from '../apps/voice-engine/src/setup.js';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'td-voice-test-'));
 const fakeVp = (root) => ({
@@ -273,6 +273,37 @@ test('setup: plan lists sources/sizes and nothing is downloaded without confirma
     fs.rmSync(root, { recursive: true, force: true });
   }
   await assert.rejects(planSetup({ model: 'large', vp }), /modelo inválido/);
+});
+
+test('setup --latest: refuses a binary without published digest unless allowUnverified', async () => {
+  const root = tmp();
+  const vp = fakeVp(root);
+  const saved = process.env.TD_WHISPER_CLI;
+  delete process.env.TD_WHISPER_CLI;
+  const api = (digest) => async () => new Response(JSON.stringify([
+    { tag_name: 'b9', assets: [{ name: 'whisper-bin-x64.zip', size: 5, browser_download_url: 'https://x/z.zip', ...(digest ? { digest } : {}) }] },
+  ]), { status: 200 });
+  try {
+    await assert.rejects(planSetup({ latest: true, vp, fetchImpl: api(null) }), /não publica hash.*--allow-unverified/s);
+    const p = await planSetup({ latest: true, allowUnverified: true, vp, fetchImpl: api(null) });
+    assert.match(p.items[0].integrity, /NÃO VERIFICADO/);
+    const ok = await planSetup({ latest: true, vp, fetchImpl: api('sha256:' + 'b'.repeat(64)) });
+    assert.equal(ok.release.sha256, 'b'.repeat(64));
+  } finally {
+    if (saved !== undefined) process.env.TD_WHISPER_CLI = saved;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('pruneWhisperDir keeps only whisper-cli + whisper/ggml DLLs (drops SDL2 and demos)', () => {
+  const dir = tmp();
+  const names = ['whisper-cli.exe', 'whisper.dll', 'ggml.dll', 'ggml-base.dll', 'ggml-cpu-haswell.dll', 'ggml-cpu-x64.dll',
+    'SDL2.dll', 'llama.dll', 'parakeet.dll', 'whisper-stream.exe', 'main.exe', 'test-vad.exe', 'whisper-server.exe'];
+  for (const n of names) fs.writeFileSync(path.join(dir, n), '');
+  const removed = pruneWhisperDir(dir);
+  assert.deepEqual(fs.readdirSync(dir).sort(), ['ggml-base.dll', 'ggml-cpu-haswell.dll', 'ggml-cpu-x64.dll', 'ggml.dll', 'whisper-cli.exe', 'whisper.dll']);
+  assert.ok(removed.includes('SDL2.dll'));
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 // ---- engine options -------------------------------------------------------------

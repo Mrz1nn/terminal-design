@@ -8,7 +8,7 @@ Não abra uma issue pública para vulnerabilidades. Use o recurso **Security > R
 
 | Área | Garantia |
 |---|---|
-| Rede | Só há acesso à rede em `td update` (API e downloads do GitHub) e em `td voice setup` (GitHub e Hugging Face), sempre a pedido e com confirmação. A status line nunca acessa a rede. |
+| Rede | Downloads só acontecem em `td update` (GitHub) e em `td voice setup` (GitHub e Hugging Face), sempre a pedido e com confirmação. A status line nunca espera a rede: ela só lê um cache local. Com `update.auto: notify` (o padrão), quando esse cache passa de `update.checkIntervalHours` (24 h), um processo em segundo plano faz uma única consulta anônima à API pública de releases do GitHub, sem token e sem dados pessoais, e só registra se existe versão nova. Para desligar: `td config set update.auto off` ou a variável `TD_NO_UPDATE_CHECK=1`. |
 | Atualizações | O zip só é aceito se o SHA-256 bater com o `SHA256SUMS.txt` da release. Nenhum script do pacote é executado antes da verificação, e não há atualização silenciosa. |
 | Downloads da voz | O modelo é verificado pelo hash publicado no whisper.cpp. Veja docs/voice.md. |
 | Áudio | É gravado em um WAV temporário local, transcrito localmente e apagado em seguida. Nada é enviado para fora. |

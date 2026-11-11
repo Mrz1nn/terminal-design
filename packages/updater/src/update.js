@@ -61,7 +61,7 @@ export async function findUpdate({ config, pkg, fetch = httpsGet, env = process.
  * Download, verify and install `best` ({release, version}). Returns {version, previous, pruned}.
  * Throws (after rolling back) on any problem.
  */
-export async function applyUpdate({ paths, best, pkg, currentVersion, fetch = httpsGet, smoke = smokeTest, log = () => {}, useTar = true }) {
+export async function applyUpdate({ paths, best, pkg, currentVersion, fetch = httpsGet, smoke = smokeTest, log = () => {}, useTar = true, pruneFn = prune }) {
   const { version, release } = best;
   const assets = findAssets(release, version, pkg?.terminalDesign);
   if (!assets.zip) throw new UpdateError('asset', `a release ${version} não tem o arquivo ${assets.zipName}`);
@@ -102,9 +102,7 @@ export async function applyUpdate({ paths, best, pkg, currentVersion, fetch = ht
     switched = true;
     if (!isValidVersionDir(paths, version)) throw new Error('a nova versão não ficou íntegra após a instalação');
     if (!launcherFilesPresent(paths)) writeLauncherFiles(paths);
-    handle.commit();
-    const pruned = prune(paths);
-    return { version, previous: currentVersion, pruned };
+    handle.commit(); // never throws
   } catch (err) {
     const notes = [];
     try {
@@ -119,9 +117,20 @@ export async function applyUpdate({ paths, best, pkg, currentVersion, fetch = ht
     if (notes.length) err.message += ` (desfeito: ${notes.join(', ')})`;
     throw err;
   } finally {
-    fs.rmSync(work, { recursive: true, force: true, maxRetries: 3 });
-    release_();
+    // cleanup is best effort: a locked temp file must not turn a finished update into a failure
+    try { fs.rmSync(work, { recursive: true, force: true, maxRetries: 3 }); } catch (e) { log(`aviso: não foi possível limpar ${work} (${e.code || e.message})`); }
+    try { release_(); } catch { /* stale lock is taken over after 30 min */ }
   }
+
+  // The new version is live from here on. Pruning is best effort and never rolls back.
+  let pruned = [];
+  const warnings = [];
+  try {
+    pruned = pruneFn(paths);
+  } catch (e) {
+    warnings.push(`não foi possível remover versões antigas (${e.code || e.message})`);
+  }
+  return { version, previous: currentVersion, pruned, warnings };
 }
 
 /** Full `td update` flow with output. Returns an exit code. */
@@ -181,6 +190,7 @@ export async function runUpdate({ ctx, flags = {}, fetch = httpsGet, env = proce
     const r = await applyUpdate({ paths, best, pkg, currentVersion, fetch, smoke, useTar, log: (s) => ui.info(s) });
     ui.ok(`Terminal-Design atualizado para ${r.version}. A versão ${r.previous} ficou guardada (td update --rollback).`);
     if (r.pruned.length) ui.info(`versões antigas removidas: ${r.pruned.join(', ')}`);
+    for (const w of r.warnings ?? []) ui.warn(w);
     ui.info('sua configuração não foi alterada.');
     return 0;
   } catch (err) {

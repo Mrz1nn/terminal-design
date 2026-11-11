@@ -4,7 +4,7 @@ Cockpit de terminal open source para Windows 10 e 11. Ele mostra uma status line
 
 - **100% gratuito, licença MIT**, sem assinatura e sem API paga
 - **Zero dependências npm em tempo de execução**: só Node.js e recursos do Windows
-- **Offline**: só acessa a internet quando você pede (`td update`, `td voice setup`)
+- **Offline**: os downloads só acontecem quando você pede (`td update`, `td voice setup`). Por padrão, uma consulta leve às releases públicas no GitHub verifica, no máximo uma vez por dia e em segundo plano, se existe versão nova. Ela só avisa e nunca instala. Para desligar: `td config set update.auto off`.
 - **Sem telemetria**
 
 ```

@@ -11,6 +11,9 @@ test('semver precedence follows semver 2.0', () => {
   for (let i = 0; i < ordered.length - 1; i++) assert.equal(compareSemver(ordered[i], ordered[i + 1]), -1, `${ordered[i]} < ${ordered[i + 1]}`);
   assert.equal(compareSemver('v1.2.3', '1.2.3'), 0);
   assert.equal(parseSemver('nope'), null);
+  assert.equal(parseSemver('01.2.3'), null);
+  assert.equal(parseSemver('1.2.3-01'), null);
+  assert.ok(parseSemver('1.2.3-0.rc-1+build.5'));
   assert.throws(() => compareSemver('x', '1.0.0'));
 });
 

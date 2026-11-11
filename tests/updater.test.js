@@ -16,6 +16,7 @@ import {
   getUpdateNotice, checkForUpdates, cacheFile,
   addToPathString, removeFromPathString, pathHas,
   removeInstall, installLocal, listProgramFiles,
+  readMarker, markerFile, ownsDataHome, sameDir, workerEnv,
 } from '../packages/updater/src/index.js';
 
 const PKG_META = { terminalDesign: { repository: 'Mrz1nn/terminal-design', releaseAsset: 'terminal-design-{version}.zip', checksumAsset: 'SHA256SUMS.txt' } };
@@ -531,4 +532,123 @@ test('removeInstall deferBin deletes bin after a delay (td.cmd may still be runn
   assert.ok(fs.existsSync(path.join(p.binDir, 'td.cmd')), 'still there right after');
   for (let i = 0; i < 40 && fs.existsSync(p.binDir); i++) await new Promise((res) => setTimeout(res, 250));
   assert.equal(fs.existsSync(p.binDir), false);
+});
+
+describe('QA fixes', () => {
+  test('uninstall refuses a TD_DATA_HOME folder that is not ours and deletes nothing', () => {
+    const p = makePaths();
+    for (const n of ['versions', 'bin', 'cache', 'logs', 'voice']) fs.mkdirSync(path.join(p.dataHome, n));
+    fs.writeFileSync(path.join(p.dataHome, 'package.json'), '{"name":"someone-elses-project"}');
+    assert.equal(ownsDataHome(p, {}), false);
+    assert.throws(() => removeInstall(p, { keepConfig: false, env: {} }), /não parece ser uma instalação/);
+    for (const n of ['versions', 'bin', 'cache', 'logs', 'voice', 'package.json']) assert.ok(fs.existsSync(path.join(p.dataHome, n)), n);
+  });
+
+  test('ownership: marker, legacy launcher + current.json, or the default location (case-insensitive)', () => {
+    const p = makePaths();
+    installFake(p, '0.1.0');
+    writeLauncherFiles(p);
+    assert.ok(readMarker(p));
+    assert.ok(ownsDataHome(p, {}));
+    activate(p, '0.1.0');
+    fs.rmSync(markerFile(p));
+    assert.ok(ownsDataHome(p, {}), 'legacy: our launcher header + valid current.json');
+    fs.rmSync(p.currentFile);
+    assert.equal(ownsDataHome(p, {}), false);
+    const parent = path.dirname(p.dataHome);
+    const env = { LOCALAPPDATA: process.platform === 'win32' ? parent.toUpperCase() : parent };
+    if (process.platform === 'win32') {
+      assert.ok(sameDir('C:\\Foo\\Bar\\', 'c:\\foo\\bar'));
+      // dataHome = <parent>\data, so make the default point at it
+      assert.equal(ownsDataHome({ ...p, dataHome: path.join(parent, 'terminaldesign') }, env), true);
+    }
+  });
+
+  test('purge leaves a custom config folder alone unless the installer recorded it', () => {
+    const p = makePaths();
+    installFake(p, '0.1.0');
+    writeLauncherFiles(p, { configHome: null }); // marker without the custom config home
+    activate(p, '0.1.0');
+    fs.writeFileSync(p.configFile, '{}');
+    fs.mkdirSync(p.userThemes, { recursive: true });
+    const r = removeInstall(p, { keepConfig: false, env: {} });
+    assert.ok(fs.existsSync(p.configFile));
+    assert.ok(fs.existsSync(p.userThemes));
+    assert.ok(r.kept.some((k) => /personalizada/.test(k)));
+  });
+
+  test('launcher pins TD_CONFIG_HOME recorded at install time, and never overrides an explicit one', () => {
+    const p = makePaths();
+    installFake(p, '0.1.0', { tdSource: 'console.log("CFG=" + process.env.TD_CONFIG_HOME + " DATA=" + process.env.TD_DATA_HOME)' });
+    writeLauncherFiles(p); // TD_CONFIG_HOME is set by makePaths -> recorded
+    writeCurrent(p, { version: '0.1.0', previous: null });
+    assert.equal(readMarker(p).configHome, p.configHome);
+    const env = { ...process.env };
+    delete env.TD_CONFIG_HOME;
+    delete env.TD_DATA_HOME;
+    const out = spawnSync(process.execPath, [p.launcher], { encoding: 'utf8', env }).stdout;
+    assert.ok(out.includes(`CFG=${p.configHome}`), out);
+    assert.ok(out.includes(`DATA=${p.dataHome}`), out);
+    const explicit = path.join(os.tmpdir(), 'explicit-cfg');
+    const out2 = spawnSync(process.execPath, [p.launcher], { encoding: 'utf8', env: { ...env, TD_CONFIG_HOME: explicit } }).stdout;
+    assert.ok(out2.includes(`CFG=${explicit}`), out2);
+  });
+
+  test('default config home is not recorded in the marker', () => {
+    const p = makePaths();
+    const saved = process.env.TD_CONFIG_HOME;
+    delete process.env.TD_CONFIG_HOME;
+    try {
+      writeLauncherFiles(p);
+      assert.equal(readMarker(p).configHome, null);
+    } finally {
+      process.env.TD_CONFIG_HOME = saved;
+    }
+  });
+
+  test('a prune failure after the switch keeps the new version and only warns', async () => {
+    const p = makePaths();
+    installFake(p, '0.1.0');
+    writeLauncherFiles(p);
+    activate(p, '0.1.0');
+    const zip = buildReleaseZip('0.2.0');
+    const fetch = fakeFetch({
+      'https://example.test/terminal-design-0.2.0.zip': zip,
+      'https://example.test/0.2.0/SHA256SUMS.txt': formatChecksums([{ name: 'terminal-design-0.2.0.zip', hash: sha256(zip) }]),
+    });
+    const r = await applyUpdate({
+      paths: p, best: { version: '0.2.0', release: release('0.2.0') }, pkg: PKG_META, currentVersion: '0.1.0', fetch,
+      pruneFn: () => { const e = new Error('busy'); e.code = 'EBUSY'; throw e; },
+    });
+    assert.equal(r.version, '0.2.0');
+    assert.match(r.warnings[0], /EBUSY/);
+    assert.equal(readCurrent(p).version, '0.2.0');
+    assert.ok(fs.existsSync(path.join(p.versions, '0.2.0', 'bin', 'td.js')));
+  });
+
+  test('installer: failures after activation are warnings, the install stays active', () => {
+    const p = makePaths();
+    const src = tmp('td-repo-');
+    writeProgram(src, '0.1.0');
+    const boom = (code) => () => { const e = new Error(code); e.code = code; throw e; };
+    const s = installLocal({
+      sourceRoot: src, paths: p, addPath: true,
+      deps: { ensureConfig: boom('EACCES'), prune: boom('EBUSY'), addUserPath: boom('EPERM') },
+    });
+    assert.equal(readCurrent(p).version, '0.1.0');
+    assert.ok(fs.existsSync(path.join(p.versions, '0.1.0', 'bin', 'td.js')));
+    assert.equal(s.warnings.length, 3);
+    assert.equal(s.path, 'error');
+  });
+
+  test('background check environment never carries GitHub tokens', () => {
+    const p = makePaths();
+    const env = workerEnv(p, { PATH: 'x', GITHUB_TOKEN: 'a', GH_TOKEN: 'b', github_token: 'c', TD_COLOR: 'none' });
+    assert.equal(env.GITHUB_TOKEN, undefined);
+    assert.equal(env.GH_TOKEN, undefined);
+    assert.equal(env.github_token, undefined);
+    assert.equal(env.PATH, 'x');
+    assert.equal(env.TD_DATA_HOME, p.dataHome);
+    assert.equal(env.TD_CONFIG_HOME, p.configHome);
+  });
 });

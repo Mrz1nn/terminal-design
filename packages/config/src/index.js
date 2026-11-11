@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { getPaths, readJson, writeJsonAtomic, deepMerge, isPlainObject, backupFile } from '../../core/src/index.js';
+import { getPaths, readJson, readJsonForUpdate, writeJsonAtomic, deepMerge, isPlainObject, backupFile } from '../../core/src/index.js';
 import { DEFAULTS } from './defaults.js';
 
 export { DEFAULTS };
@@ -71,7 +71,8 @@ export function loadConfig(paths = getPaths()) {
 
 /** Persist one key into the user file (backup first). Throws on invalid value. */
 export function setConfigValue(dotted, value, paths = getPaths()) {
-  const user = loadUserConfig(paths);
+  // Strict: a hand-edited file with a syntax error is never replaced by a one-key file.
+  const user = readJsonForUpdate(paths.configFile, {});
   setAt(user, dotted, value);
   const errors = validate(deepMerge(structuredClone(DEFAULTS), user));
   if (errors.length) throw new Error(errors.join('\n'));

@@ -10,7 +10,7 @@ import {
  * Build the download plan without touching the network (unless latest=true, which asks GitHub).
  * Returns { items: [{kind, label, url, size, integrity, license, dest}], release, modelName }.
  */
-export async function planSetup({ config, model, latest = false, force = false, whisperPath, modelPath, vp = voicePaths() } = {}) {
+export async function planSetup({ config, model, latest = false, force = false, allowUnverified = false, whisperPath, modelPath, vp = voicePaths(), fetchImpl } = {}) {
   const modelName = model ?? config?.voice?.model ?? 'base';
   if (!MODELS[modelName]) throw new Error(`modelo inválido: ${modelName} (use ${Object.keys(MODELS).join(', ')})`);
   const items = [];
@@ -18,14 +18,19 @@ export async function planSetup({ config, model, latest = false, force = false, 
 
   const bin = resolveWhisperBinary({ explicit: whisperPath, config, vp });
   if (force || !bin.exists) {
-    release = latest ? await fetchLatestRelease() : PINNED_RELEASE;
+    release = latest ? await fetchLatestRelease(fetchImpl ? { fetchImpl } : {}) : PINNED_RELEASE;
     if (!release) throw new Error('nenhuma release do whisper.cpp com whisper-bin-x64.zip foi encontrada');
+    // An executable we cannot verify is never installed silently: it would be run on every dictation.
+    if (!release.sha256 && !allowUnverified) {
+      throw new Error(`a build ${release.tag} não publica hash (digest) no GitHub; sem verificação o binário não é instalado. ` +
+        'Rode sem --latest (build fixada e verificada) ou, por sua conta, com --allow-unverified');
+    }
     items.push({
       kind: 'whisper',
       label: `whisper.cpp ${release.tag} (${release.asset}, CPU x64)`,
       url: release.url,
       size: release.size,
-      integrity: release.sha256 ? `SHA-256 ${release.sha256.slice(0, 16)}… (publicado pelo GitHub)` : 'sem hash publicado: SHA-256 será registrado no download',
+      integrity: release.sha256 ? `SHA-256 ${release.sha256.slice(0, 16)}… (publicado pelo GitHub)` : 'NÃO VERIFICADO (--allow-unverified): sem hash publicado, SHA-256 só será registrado',
       license: 'MIT (ggml-org/whisper.cpp)',
     });
   }
@@ -78,7 +83,7 @@ async function installWhisper(release, { say, vp }) {
     size: release.size,
     onProgress: (r, t) => say.progress('whisper.cpp', r, t),
   });
-  if (!release.sha256) say.warn(`a release não publica hash; SHA-256 registrado: ${got.sha256}`);
+  if (!release.sha256) say.warn(`binário NÃO verificado (--allow-unverified); SHA-256 registrado: ${got.sha256}`);
   else say.ok(`SHA-256 confere (${got.sha256.slice(0, 16)}…)`);
 
   const dest = path.join(vp.whisperDir, release.tag);
@@ -87,6 +92,8 @@ async function installWhisper(release, { say, vp }) {
   fs.rmSync(zip, { force: true });
   const exe = findFile(dest, 'whisper-cli.exe');
   if (!exe) throw new Error(`whisper-cli.exe não encontrado dentro de ${release.asset}`);
+  const removed = pruneWhisperDir(path.dirname(exe));
+  if (removed.length) say.info(`${removed.length} arquivo(s) de exemplo do pacote removidos (só whisper-cli e as DLLs do ggml ficam)`);
   const man = readManifest(vp);
   man.whisper = { tag: release.tag, asset: release.asset, url: release.url, sha256: got.sha256, publishedDigest: !!release.sha256, path: exe, installed: new Date().toISOString() };
   writeManifest(man, vp);
@@ -103,4 +110,21 @@ async function installModel(name, { say, vp }) {
   await verifyModel(dest, name, { vp, force: true });
   say.ok(`modelo ${name} instalado e verificado (SHA-1 ${meta.sha1.slice(0, 12)}…)`);
   return { kind: 'model', path: dest };
+}
+
+// whisper-cli.exe only needs whisper.dll + ggml*.dll (ggml-cpu-*.dll are CPU backends loaded at
+// runtime by ggml). The release zip also ships demos (stream, command, talk-llama, wchess, parakeet,
+// tests) and SDL2.dll used only by those. Removing them keeps the install minimal and means no
+// SDL2 (zlib license) or other extra code is kept on disk.
+export const KEEP_FILES = [/^whisper-cli\.exe$/i, /^whisper\.dll$/i, /^ggml(-[a-z0-9]+)*\.dll$/i];
+
+/** Delete everything in the extracted folder except what whisper-cli needs. Returns removed names. */
+export function pruneWhisperDir(dir) {
+  const removed = [];
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (e.isFile() && KEEP_FILES.some((re) => re.test(e.name))) continue;
+    fs.rmSync(path.join(dir, e.name), { recursive: true, force: true });
+    removed.push(e.name);
+  }
+  return removed;
 }

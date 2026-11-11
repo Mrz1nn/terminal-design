@@ -2,9 +2,10 @@
 // ~/.claude/settings.json using only official settings keys (statusLine, subagentStatusLine).
 // Backs up settings.json before every change and remembers what was there before,
 // so uninstall restores the user's previous status line exactly.
+// A settings.json that does not parse is never modified.
 import fs from 'node:fs';
 import path from 'node:path';
-import { readJson, writeJsonAtomic, backupFile, installMode } from '../../packages/core/src/index.js';
+import { readJson, readJsonForUpdate, writeJsonAtomic, backupFile, installMode, isPlainObject } from '../../packages/core/src/index.js';
 
 const MARKER = 'terminal-design';
 const fwd = (p) => p.replace(/\\/g, '/');
@@ -20,7 +21,7 @@ function previousFile(paths) {
 /** Command Claude Code runs. Uses the stable launcher in managed installs. */
 export function statusCommand(paths, sub = false) {
   const entry = installMode(paths) === 'managed' ? paths.launcher : path.join(paths.appRoot, 'bin', 'td.js');
-  // The marker env var lets us recognize our own entries without guessing from paths.
+  // The --from marker lets us recognize our own entries without guessing from paths.
   return `node "${fwd(entry)}" statusline${sub ? ' --subagent' : ''} --from=${MARKER}`;
 }
 
@@ -30,10 +31,17 @@ export function isOurs(entry) {
 
 export function status(paths) {
   const file = settingsFile(paths);
-  const s = readJson(file, {});
+  let s = {};
+  let error = null;
+  try {
+    s = readJsonForUpdate(file, {});
+  } catch (err) {
+    error = err.message;
+  }
   return {
     settingsFile: file,
     exists: fs.existsSync(file),
+    error,
     statusLine: s.statusLine ?? null,
     subagentStatusLine: s.subagentStatusLine ?? null,
     installed: isOurs(s.statusLine),
@@ -44,18 +52,20 @@ export function status(paths) {
 
 export function install(paths, { subagent = true, refreshInterval = 30 } = {}) {
   const file = settingsFile(paths);
-  const settings = readJson(file, {});
+  const settings = readJsonForUpdate(file, {}); // throws on a broken file: nothing is written
   const backup = backupFile(file, paths.backups, 'claude-settings.json');
 
-  // Remember the user's own entries once, so a reinstall doesn't overwrite the real original.
+  // Remember the user's own entries. A foreign entry always refreshes the saved copy, so
+  // a status line the user configured after our first install is the one restored later.
   const prevFile = previousFile(paths);
-  if (!fs.existsSync(prevFile)) {
-    writeJsonAtomic(prevFile, {
-      savedAt: new Date().toISOString(),
-      statusLine: isOurs(settings.statusLine) ? null : settings.statusLine ?? null,
-      subagentStatusLine: isOurs(settings.subagentStatusLine) ? null : settings.subagentStatusLine ?? null,
-    });
+  const saved = readJson(prevFile, null);
+  const prev = isPlainObject(saved) ? saved : { statusLine: null, subagentStatusLine: null };
+  for (const key of ['statusLine', 'subagentStatusLine']) {
+    if (!settings[key]) prev[key] = null; // user has none now: restore none
+    else if (!isOurs(settings[key])) prev[key] = settings[key]; // newest foreign entry wins
+    else prev[key] = prev[key] ?? null; // ours already: keep what was saved
   }
+  writeJsonAtomic(prevFile, { ...prev, savedAt: new Date().toISOString() });
 
   settings.statusLine = { type: 'command', command: statusCommand(paths), refreshInterval };
   if (subagent) settings.subagentStatusLine = { type: 'command', command: statusCommand(paths, true) };
@@ -66,8 +76,9 @@ export function install(paths, { subagent = true, refreshInterval = 30 } = {}) {
 export function uninstall(paths) {
   const file = settingsFile(paths);
   if (!fs.existsSync(file)) return { file, changed: false };
-  const settings = readJson(file, {});
-  const prev = readJson(previousFile(paths), { statusLine: null, subagentStatusLine: null });
+  const settings = readJsonForUpdate(file, {});
+  const saved = readJson(previousFile(paths), null);
+  const prev = isPlainObject(saved) ? saved : { statusLine: null, subagentStatusLine: null };
   let changed = false;
   for (const key of ['statusLine', 'subagentStatusLine']) {
     if (isOurs(settings[key])) {
@@ -82,5 +93,5 @@ export function uninstall(paths) {
     writeJsonAtomic(file, settings);
   }
   fs.rmSync(previousFile(paths), { force: true });
-  return { file, changed, backup, restored: !!(prev.statusLine || prev.subagentStatusLine) };
+  return { file, changed, backup, restored: changed && !!(prev.statusLine || prev.subagentStatusLine) };
 }

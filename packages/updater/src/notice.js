@@ -64,6 +64,16 @@ function isFresh(cache, config, repo, now) {
     && cache.channel === channelOf(config) && cache.repo === repo;
 }
 
+/**
+ * Environment for the detached worker: same TD_* locations, but GitHub credentials removed.
+ * A token is only ever sent by an explicit `td update` / `td update --check`.
+ */
+export function workerEnv(paths, env = process.env) {
+  const out = { ...env, TD_DATA_HOME: paths.dataHome, TD_CONFIG_HOME: paths.configHome, TD_BACKGROUND_CHECK: '1' };
+  for (const k of Object.keys(out)) if (/^(GITHUB_TOKEN|GH_TOKEN|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN)$/i.test(k)) delete out[k];
+  return out;
+}
+
 /** Start the background refresh, detached and hidden. Never throws. */
 export function spawnBackgroundCheck(paths, { now = Date.now() } = {}) {
   try {
@@ -74,7 +84,7 @@ export function spawnBackgroundCheck(paths, { now = Date.now() } = {}) {
       detached: true,
       stdio: 'ignore',
       windowsHide: true,
-      env: { ...process.env, TD_DATA_HOME: paths.dataHome, TD_CONFIG_HOME: paths.configHome },
+      env: workerEnv(paths),
     });
     child.on('error', () => {});
     child.unref();

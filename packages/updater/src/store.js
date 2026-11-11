@@ -90,10 +90,12 @@ export function prepareVersionDir(paths, v, populate) {
   return {
     dir: target,
     replaced,
+    /** Never throws: a leftover .old folder is only clutter, and prune() cleans it up later. */
     commit() {
-      if (done) return;
+      if (done) return true;
       done = true;
-      if (replaced) rm(old);
+      if (!replaced) return true;
+      try { rm(old); return true; } catch { return false; }
     },
     revert() {
       if (done) return;

@@ -392,10 +392,52 @@ namespace TerminalDesign.Voice
             return sent / 2;
         }
 
+        /// <summary>
+        /// Snapshot every clipboard format (text, images, file lists, HTML...) into a new DataObject.
+        /// Returns null when some format cannot be read (e.g. delayed rendering by the owner app):
+        /// in that case the caller must NOT restore, because a partial restore would lose data.
+        /// `empty` is true when the clipboard had nothing at all.
+        /// </summary>
+        static DataObject SnapshotClipboard(out bool empty)
+        {
+            empty = false;
+            IDataObject current;
+            try { current = Clipboard.GetDataObject(); } catch { return null; }
+            if (current == null) { empty = true; return null; }
+            string[] formats;
+            try { formats = current.GetFormats(false); } catch { return null; }
+            if (formats == null || formats.Length == 0) { empty = true; return null; }
+            var copy = new DataObject();
+            foreach (string f in formats)
+            {
+                object data;
+                try { data = current.GetData(f, false); } catch { return null; }
+                if (data == null) return null;
+                // Streams belong to the old clipboard owner; copy their bytes.
+                var stream = data as Stream;
+                if (stream != null)
+                {
+                    var ms = new MemoryStream();
+                    try { if (stream.CanSeek) stream.Position = 0; stream.CopyTo(ms); } catch { return null; }
+                    ms.Position = 0;
+                    data = ms;
+                }
+                copy.SetData(f, false, data);
+            }
+            return copy;
+        }
+
         public static int Paste(string text)
         {
-            string previous = null;
-            try { if (Clipboard.ContainsText()) previous = Clipboard.GetText(); } catch { }
+            bool wasEmpty;
+            DataObject previous = SnapshotClipboard(out wasEmpty);
+            if (previous == null && !wasEmpty)
+            {
+                // Could not copy what the user has on the clipboard: never overwrite it, type instead.
+                Protocol.Emit("warn", "code", "clipboard",
+                    "message", "área de transferência com conteúdo que não dá para preservar; digitando em vez de colar");
+                return TypeUnicode(text);
+            }
             Clipboard.SetText(text);
             var inputs = new[]
             {
@@ -404,7 +446,8 @@ namespace TerminalDesign.Voice
             uint n = Native.SendInput((uint)inputs.Length, inputs, InputSize);
             // Give the target app time to read the clipboard before restoring it.
             Thread.Sleep(250);
-            try { if (previous != null) Clipboard.SetText(previous); else Clipboard.Clear(); } catch { }
+            // Restore every format that was there (or leave it empty if it was empty).
+            try { if (previous != null) Clipboard.SetDataObject(previous, true); else Clipboard.Clear(); } catch { }
             return n == inputs.Length ? text.Length : 0;
         }
 

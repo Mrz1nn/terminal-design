@@ -16,7 +16,8 @@ O módulo funciona sozinho, sem o cockpit. O código fica em `apps/voice-engine/
 ```powershell
 td voice setup                 # whisper.cpp + modelo "base" (padrão da config)
 td voice setup --model=tiny    # modelo menor e mais rápido
-td voice setup --latest        # usa a build mais nova do whisper.cpp em vez da fixada
+td voice setup --latest        # usa a build mais nova do whisper.cpp em vez da fixada (exige digest publicado)
+td voice setup --latest --allow-unverified   # aceita build sem hash publicado (por sua conta e risco)
 td voice setup --force         # baixa de novo
 td voice setup --yes           # confirma sem perguntar (scripts)
 ```
@@ -31,7 +32,19 @@ Antes de baixar qualquer coisa, o `setup` mostra a origem, o tamanho, o hash esp
 | `ggml-small.bin` | idem | 465 MB | SHA-1 `55356645…` |
 | `ggml-medium.bin` | idem | 1.4 GB | SHA-1 `fd9727b6…` |
 
-Os SHA-1 dos modelos vêm de `models/README.md` do whisper.cpp. Um download com hash ou tamanho errado é apagado e não é instalado. Com `--latest`, o hash vem da API do GitHub. Se uma release não publicar hash, o SHA-256 calculado no download fica registrado em `install.json` e o `setup` avisa.
+Os SHA-1 dos modelos vêm de `models/README.md` do whisper.cpp. Um download com hash ou tamanho errado é apagado e não é instalado. Com `--latest`, o hash vem da API do GitHub (o `digest` do asset). Se essa build não publicar hash, o `setup` **se recusa** a instalar, porque o binário seria executado a cada ditado sem nenhuma verificação. Só com `--allow-unverified` explícito ele instala mesmo assim. Nesse caso, o SHA-256 calculado no download fica registrado em `install.json` e o `setup` mostra o aviso "NÃO VERIFICADO".
+
+Depois de extrair o zip, o `setup` apaga tudo o que o `whisper-cli.exe` não usa: os programas de exemplo (`whisper-stream`, `whisper-command`, `whisper-talk-llama`, `wchess`, `whisper-server`, `parakeet-*`), os testes e as DLLs que só eles carregam (`SDL2.dll`, `llama.dll`, `parakeet.dll`). Ficam apenas:
+
+| Arquivo | O que é | Licença |
+|---|---|---|
+| `whisper-cli.exe`, `whisper.dll` | whisper.cpp | MIT, © The ggml authors |
+| `ggml.dll`, `ggml-base.dll` | biblioteca ggml | MIT, © The ggml authors |
+| `ggml-cpu-{x64,sse42,sandybridge,haswell,skylakex,icelake,cascadelake,cannonlake,alderlake}.dll` | backends de CPU do ggml; o ggml escolhe em tempo de execução o que combina com o seu processador | MIT, © The ggml authors |
+
+O zip original da build `b5454` traz ainda `SDL2.dll` (licença zlib, usada só pelos exemplos de captura em tempo real). Ela é removida na instalação e nunca é carregada pelo `td voice`.
+
+O `whisper-cli.exe` e as DLLs dependem do **Microsoft Visual C++ 2015-2022 Redistributable (x64)** (`MSVCP140.dll`, `VCRUNTIME140.dll`, `VCRUNTIME140_1.dll`), que não vem no zip. A maioria dos PCs com Windows já tem esse pacote instalado. Se o `td doctor` mostrar "whisper.cpp não executa (faltam DLLs?)", instale o pacote em <https://aka.ms/vs/17/release/vc_redist.x64.exe>, distribuído pela Microsoft sob os termos de licença dela.
 
 Os arquivos ficam em `%LOCALAPPDATA%\TerminalDesign\voice\`:
 
@@ -98,7 +111,7 @@ Na prática, o `tiny` responde em cerca de 1 s e erra mais; o `base` é um bom e
 - O processamento é 100% local. O áudio vai do microfone para um WAV temporário em `voice\tmp\`, o `whisper-cli.exe` lê esse arquivo e o WAV é apagado logo depois, inclusive quando a transcrição falha. Na inicialização e no encerramento, qualquer WAV que tenha sobrado de uma queda é apagado.
 - Nenhum áudio e nenhum texto é guardado em log ou enviado para algum lugar. O texto reconhecido só aparece no console do `td voice`.
 - O único acesso à rede é o `td voice setup`, que baixa os arquivos listados acima, sempre com confirmação.
-- No modo `paste`, o texto passa pela área de transferência e o conteúdo de texto anterior é restaurado em seguida.
+- No modo `paste`, o texto passa pela área de transferência e tudo o que estava nela antes (texto, imagem, arquivos copiados, HTML) é restaurado em seguida.
 
 ## Como funciona
 
@@ -139,7 +152,7 @@ Também são exportadas as funções puras `parseHotkey`, `cleanTranscript`, `bu
 - **O texto vai para a janela que está em foco no momento de digitar**, não para a que estava em foco quando você apertou o atalho. Se você trocar de janela durante a transcrição, o texto vai para a nova.
 - **O atalho é exclusivo**: se outro programa já registrou a combinação, o `td voice` avisa e não inicia. Escolha outra com `--hotkey=`. A mesma combinação também deixa de chegar aos outros programas enquanto o `td voice` estiver rodando.
 - **Nomes de microfone**: a API waveIn corta os nomes em 31 caracteres e os índices podem mudar quando você conecta ou desconecta um dispositivo. Prefira escolher por parte do nome. Com `default`, o que vale é o microfone padrão de *Configurações > Som > Entrada*. Se você mudar o microfone padrão enquanto o `td voice` estiver rodando, a mudança vale a partir da próxima gravação.
-- **Modo `paste`**: só texto é restaurado na área de transferência. Imagens ou arquivos copiados antes se perdem. Alguns programas usam outro atalho para colar (no CMD clássico antigo, por exemplo, Ctrl+V depende de "Usar Ctrl+Shift+C/V").
+- **Modo `paste`**: antes de colar, o host copia todos os formatos que estão na área de transferência e depois os devolve. Alguns programas só entregam o conteúdo quando ele é colado de fato ("delayed rendering"); nesses casos a cópia não é possível. Então o host não mexe na área de transferência e digita o texto como no modo `type`, com um aviso no console. A restauração devolve os mesmos dados, mas o Windows passa a considerar o Terminal-Design como dono desse conteúdo. Alguns programas usam outro atalho para colar (no CMD clássico antigo, por exemplo, Ctrl+V depende de "Usar Ctrl+Shift+C/V").
 - **Só CPU**: a build baixada é a `whisper-bin-x64` (CPU, sem BLAS). Para usar GPU (CUDA), baixe você mesmo um `whisper-cli.exe` com CUDA e aponte para ele com `--whisper=`.
 - **O modelo é recarregado a cada trecho**, porque cada transcrição chama o `whisper-cli` de novo. Com o `base`, isso custa uma fração de segundo.
 - **Alucinações**: em ruído ou silêncio o Whisper às vezes inventa frases ("Legendas pela comunidade Amara.org"). Frases conhecidas são descartadas quando são o texto inteiro, e áudio muito baixo nem chega a ser transcrito.
@@ -147,6 +160,8 @@ Também são exportadas as funções puras `parseHotkey`, `cleanTranscript`, `bu
 
 ## Licenças
 
-- **whisper.cpp**: MIT, © The ggml authors. É baixado como binário oficial das releases de `ggml-org/whisper.cpp` e não vem embutido neste repositório.
+- **whisper.cpp e ggml** (`whisper-cli.exe`, `whisper.dll`, `ggml*.dll`): MIT, © The ggml authors. São baixados como binários oficiais das releases de `ggml-org/whisper.cpp` e não vêm embutidos neste repositório.
+- **SDL2** (`SDL2.dll`, licença zlib): vem no zip do upstream, mas é apagada na instalação e nunca é usada.
+- **Microsoft Visual C++ Redistributable**: é um pré-requisito do sistema, não é distribuído pelo Terminal-Design.
 - **Modelos ggml**: são pesos do [OpenAI Whisper](https://github.com/openai/whisper) (MIT), convertidos para ggml por Georgi Gerganov e distribuídos em `huggingface.co/ggerganov/whisper.cpp`.
 - **O código deste módulo**: MIT, como o resto do Terminal-Design.

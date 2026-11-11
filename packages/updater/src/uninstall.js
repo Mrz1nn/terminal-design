@@ -4,17 +4,55 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { readMarker, LAUNCHER_HEADER, MARKER_NAME } from './launcher.js';
+import { readCurrent } from './store.js';
 
 /** Program files and caches inside dataHome. */
-export const DATA_ITEMS = ['versions', 'bin', 'launcher.js', 'package.json', 'current.json', 'staging', 'cache', 'logs', 'voice', 'claude-code-previous.json'];
+export const DATA_ITEMS = ['versions', 'bin', 'launcher.js', 'package.json', 'current.json', 'staging', 'cache', 'logs', 'voice', 'claude-code-previous.json', MARKER_NAME];
 /** Extra dataHome items removed only when the config is purged too (they hold config copies). */
 export const DATA_PURGE_ITEMS = ['backups'];
 /** Items inside configHome. */
 export const CONFIG_ITEMS = ['config.json', 'themes'];
 
+const win = process.platform === 'win32';
+
+/** Normalized folder path for comparisons (case-insensitive on Windows). */
+export function normDir(dir) {
+  let d = path.resolve(String(dir));
+  if (d.length > path.parse(d).root.length) d = d.replace(/[\\/]+$/, '');
+  return win ? d.toLowerCase() : d;
+}
+
+export function sameDir(a, b) {
+  return !!a && !!b && normDir(a) === normDir(b);
+}
+
 function isDangerous(dir) {
-  const d = path.resolve(dir);
-  return d === path.parse(d).root || d === path.resolve(os.homedir()) || d.length < 6;
+  const d = normDir(dir);
+  return d === normDir(path.parse(path.resolve(dir)).root) || d === normDir(os.homedir()) || d.length < 6;
+}
+
+function defaultHome(winVar, parts, env) {
+  return win && env[winVar] ? path.join(env[winVar], 'TerminalDesign') : path.join(os.homedir(), ...parts);
+}
+
+/**
+ * Is dataHome really a Terminal-Design folder? True when it has our marker file, or our
+ * launcher + a valid current.json (installs made before the marker existed), or it is the
+ * default location (%LOCALAPPDATA%\TerminalDesign).
+ */
+export function ownsDataHome(paths, env = process.env) {
+  if (readMarker(paths)) return true;
+  try {
+    if (fs.readFileSync(paths.launcher, 'utf8').startsWith(LAUNCHER_HEADER) && readCurrent(paths)) return true;
+  } catch { /* no launcher */ }
+  return sameDir(paths.dataHome, defaultHome('LOCALAPPDATA', ['.local', 'share', 'terminal-design'], env));
+}
+
+/** configHome is ours when it is the default location or the custom one recorded by the installer. */
+export function ownsConfigHome(paths, marker = readMarker(paths), env = process.env) {
+  if (sameDir(paths.configHome, defaultHome('APPDATA', ['.config', 'terminal-design'], env))) return true;
+  return !!marker?.configHome && sameDir(marker.configHome, paths.configHome);
 }
 
 function removeItems(base, names, removed, kept) {
@@ -46,19 +84,28 @@ export function scheduleDeferredRemoval(binDir, dataHome) {
 }
 
 /** Returns {removed: string[], kept: string[], deferred: string[]}. deferBin: see scheduleDeferredRemoval. */
-export function removeInstall(paths, { keepConfig = true, deferBin = false } = {}) {
+export function removeInstall(paths, { keepConfig = true, deferBin = false, env = process.env } = {}) {
   const removed = [];
   const kept = [];
   if (isDangerous(paths.dataHome) || isDangerous(paths.configHome)) throw new Error('pasta de dados/configuração suspeita; nada foi removido');
+  const marker = readMarker(paths); // read before anything is deleted
+  const configOwned = ownsConfigHome(paths, marker, env);
+  if (fs.existsSync(paths.dataHome) && !ownsDataHome(paths, env)) {
+    throw new Error(`${paths.dataHome} não parece ser uma instalação do Terminal-Design (sem o arquivo ${MARKER_NAME}); nada foi removido`);
+  }
   // bin\td.cmd may be the script running right now: delete it last
-  const order = DATA_ITEMS.filter((n) => n !== 'bin').concat(keepConfig ? [] : DATA_PURGE_ITEMS, deferBin ? [] : ['bin']);
+  // When backups stay behind, the marker stays too, so a later `td uninstall --purge` can
+  // still prove the folder is ours.
+  const keepMarker = keepConfig && fs.existsSync(path.join(paths.dataHome, 'backups'));
+  const order = DATA_ITEMS.filter((n) => n !== 'bin' && !(keepMarker && n === MARKER_NAME)).concat(keepConfig ? [] : DATA_PURGE_ITEMS, deferBin ? [] : ['bin']);
   removeItems(paths.dataHome, order, removed, kept);
   const deferred = [];
   if (deferBin && fs.existsSync(paths.binDir)) {
     scheduleDeferredRemoval(paths.binDir, paths.dataHome);
     deferred.push(paths.binDir);
   }
-  if (!keepConfig) removeItems(paths.configHome, CONFIG_ITEMS, removed, kept);
+  if (!keepConfig && !configOwned) kept.push(`${paths.configHome} (pasta de configuração personalizada não registrada pelo instalador; apague manualmente se quiser)`);
+  else if (!keepConfig) removeItems(paths.configHome, CONFIG_ITEMS, removed, kept);
   else if (fs.existsSync(paths.configHome)) kept.push(paths.configHome);
   if (keepConfig && fs.existsSync(path.join(paths.dataHome, 'backups'))) kept.push(path.join(paths.dataHome, 'backups'));
   return { removed, kept, deferred };

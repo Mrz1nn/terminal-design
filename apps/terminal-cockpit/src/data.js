@@ -14,7 +14,8 @@ function limit(o) {
   return { usedPct: pct, resetsAt: num(o.resets_at) };
 }
 
-export function normalize(raw = {}) {
+export function normalize(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) raw = {};
   const cw = raw.context_window ?? {};
   const cu = cw.current_usage ?? null;
   const size = num(cw.context_window_size);

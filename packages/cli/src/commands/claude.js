@@ -24,6 +24,10 @@ export default {
     const { ui, paths } = ctx;
     const sub = args[0] ?? 'status';
     const st = cc.status(paths);
+    if (st.error) {
+      ui.error(st.error);
+      return 1;
+    }
     if (sub === 'status') {
       ui.title('Claude Code');
       ui.table([
@@ -56,6 +60,7 @@ export default {
   doctor(ctx) {
     const st = cc.status(ctx.paths);
     const v = claudeVersion();
+    if (st.error) return [{ name: 'Claude Code settings', ok: false, detail: st.error }];
     return [
       { name: 'Claude Code', ok: v ? true : null, detail: v ? `versão ${v}` : 'comando "claude" não encontrado no PATH' },
       { name: 'Status line', ok: st.installed ? true : null, detail: st.installed ? 'Terminal-Design ativa' : st.foreign ? 'outra status line instalada' : 'não instalada (td claude install)' },

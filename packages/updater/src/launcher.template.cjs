@@ -21,13 +21,22 @@ if (nv[0] < 18 || (nv[0] === 18 && nv[1] < 17)) {
   process.exit(1);
 }
 
-// Keep every part of the program pointed at this install, even with a custom location.
+// Keep every part of the program pointed at this install, even with custom locations:
+// data = this folder; config = the custom folder recorded at install time (if any).
 if (!process.env.TD_DATA_HOME) process.env.TD_DATA_HOME = home;
+if (!process.env.TD_CONFIG_HOME) {
+  try {
+    var marker = JSON.parse(fs.readFileSync(path.join(home, '.terminal-design'), 'utf8').replace(/^\uFEFF/, ''));
+    if (marker && marker.product === 'terminal-design' && typeof marker.configHome === 'string' && path.isAbsolute(marker.configHome)) {
+      process.env.TD_CONFIG_HOME = marker.configHome;
+    }
+  } catch (e) { /* no marker: default config location */ }
+}
 process.env.TD_LAUNCHER = String(LAUNCHER_FORMAT);
 
 function readCurrent() {
   try {
-    var raw = fs.readFileSync(path.join(home, 'current.json'), 'utf8').replace(/^﻿/, '');
+    var raw = fs.readFileSync(path.join(home, 'current.json'), 'utf8').replace(/^\uFEFF/, '');
     var cur = JSON.parse(raw);
     return cur && typeof cur === 'object' ? cur : {};
   } catch (e) {

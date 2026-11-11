@@ -58,7 +58,7 @@ if ($NoPath) { $nodeArgs += '--no-path' }
 if ($Theme) { $nodeArgs += "--theme=$Theme" }
 
 & node @nodeArgs
-if ($LASTEXITCODE -ne 0) { Fail 'a instalação não foi concluída (nada foi ativado pela metade).' }
+if ($LASTEXITCODE -ne 0) { Fail 'a instalação não foi concluída. A nova versão não foi ativada; a instalação anterior, se havia, continua como estava.' }
 
 if ($env:TD_DATA_HOME) { $dataHome = $env:TD_DATA_HOME } else { $dataHome = Join-Path $env:LOCALAPPDATA 'TerminalDesign' }
 $binDir = Join-Path $dataHome 'bin'

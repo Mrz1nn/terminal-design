@@ -51,7 +51,7 @@ async function cmdSetup({ flags, ctx }) {
   const ov = overridesFrom(flags);
   ui.title('Configurar digitação por voz (whisper.cpp local)');
   const plan = await planSetup({
-    config: ctx.config, model: ov.model, latest: !!flags.latest, force: !!flags.force,
+    config: ctx.config, model: ov.model, latest: !!flags.latest, force: !!flags.force, allowUnverified: !!flags.allowUnverified,
     whisperPath: ov.whisperPath, modelPath: ov.modelPath,
   });
   if (plan.items.length) {
@@ -193,7 +193,7 @@ export default {
   summary: 'digitação por voz offline (whisper.cpp) com atalho global',
   usage: [
     'td voice                         inicia (segure Ctrl+Alt+Space, fale, solte)',
-    'td voice setup [--model=base] [--latest] [--force] [--yes]',
+    'td voice setup [--model=base] [--latest [--allow-unverified]] [--force] [--yes]',
     'td voice devices                 lista microfones',
     'td voice test [--seconds=5]      grava e mostra o texto, sem digitar',
     'td voice status [--json]',

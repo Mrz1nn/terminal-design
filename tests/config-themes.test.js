@@ -38,6 +38,16 @@ test('config: defaults, set, invalid values rejected, user file minimal', () => 
   assert.ok(fs.readdirSync(path.join(root, 'data', 'backups')).length >= 1, 'backup made before writes');
 });
 
+test('config set refuses to rewrite a config.json with a syntax error', () => {
+  isolate();
+  const paths = getPaths();
+  fs.mkdirSync(paths.configHome, { recursive: true });
+  const broken = '{ "theme": { "name": "nord" }, "cockpit": { "layout": "full" }, }';
+  fs.writeFileSync(paths.configFile, broken);
+  assert.throws(() => setConfigValue('color.mode', 'none', paths), /nada foi alterado/);
+  assert.equal(fs.readFileSync(paths.configFile, 'utf8'), broken);
+});
+
 test('parseValue', () => {
   assert.equal(parseValue('true'), true);
   assert.equal(parseValue('12'), 12);

@@ -10,12 +10,16 @@ export function currentVersion() {
   return readPackage().version;
 }
 
-const SEMVER = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/;
+// Semver 2.0: no leading zeros in numeric parts or numeric prerelease identifiers.
+const N = '(0|[1-9]\\d*)';
+const SEMVER = new RegExp(`^v?${N}\\.${N}\\.${N}(?:-([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$`);
 
 export function parseSemver(v) {
   const m = SEMVER.exec(String(v).trim());
   if (!m) return null;
-  return { major: +m[1], minor: +m[2], patch: +m[3], pre: m[4] ? m[4].split('.') : [] };
+  const pre = m[4] ? m[4].split('.') : [];
+  if (pre.some((id) => /^0\d+$/.test(id))) return null;
+  return { major: +m[1], minor: +m[2], patch: +m[3], pre };
 }
 
 /** Semver 2.0 precedence. Returns -1, 0 or 1. Throws on invalid input. */

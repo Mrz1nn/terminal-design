@@ -32,6 +32,34 @@ test('Claude Code install keeps other settings, backs up, and uninstall restores
   assert.equal(s.model, 'opus');
 });
 
+test('a broken settings.json is never overwritten', () => {
+  isolate();
+  const paths = getPaths();
+  const file = cc.settingsFile(paths);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const broken = '{ "model": "opus", "permissions": { "allow": ["x"] }, }';
+  fs.writeFileSync(file, broken);
+  assert.throws(() => cc.install(paths), /nada foi alterado/);
+  assert.equal(fs.readFileSync(file, 'utf8'), broken);
+  assert.ok(cc.status(paths).error);
+  assert.throws(() => cc.uninstall(paths), /nada foi alterado/);
+});
+
+test('reinstall remembers the newest foreign status line', () => {
+  isolate();
+  const paths = getPaths();
+  const file = cc.settingsFile(paths);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ statusLine: { type: 'command', command: 'X' } }));
+  cc.install(paths);
+  const s = readJson(file);
+  s.statusLine = { type: 'command', command: 'Y' }; // user switches to their own
+  fs.writeFileSync(file, JSON.stringify(s));
+  cc.install(paths);
+  cc.uninstall(paths);
+  assert.equal(readJson(file).statusLine.command, 'Y');
+});
+
 test('uninstall leaves a foreign status line alone', () => {
   isolate();
   const paths = getPaths();

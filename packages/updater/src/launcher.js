@@ -29,8 +29,39 @@ export const SHIM_SH = [
   '',
 ].join('\n');
 
-/** (Re)write launcher.js and the bin shims. Returns the written paths. */
-export function writeLauncherFiles(paths) {
+export const MARKER_NAME = '.terminal-design';
+export const LAUNCHER_HEADER = '// Terminal-Design launcher.';
+
+export function markerFile(paths) {
+  return path.join(paths.dataHome, MARKER_NAME);
+}
+
+/** Install marker (ownership proof for td uninstall, custom config home for the launcher). */
+export function readMarker(paths) {
+  try {
+    const m = JSON.parse(fs.readFileSync(markerFile(paths), 'utf8').replace(/^\uFEFF/, ''));
+    return m && m.product === 'terminal-design' ? m : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Write the marker. configHome is recorded only when it is custom (TD_CONFIG_HOME was set),
+ * so the launcher can pin it later; the default location needs no pinning.
+ */
+export function writeMarker(paths, { configHome = process.env.TD_CONFIG_HOME ? paths.configHome : null } = {}) {
+  const prev = readMarker(paths);
+  writeFileAtomic(markerFile(paths), JSON.stringify({
+    product: 'terminal-design',
+    format: 1,
+    installedAt: prev?.installedAt ?? new Date().toISOString(),
+    configHome: configHome ?? null,
+  }, null, 2) + '\n');
+}
+
+/** (Re)write launcher.js, the bin shims and the marker. Returns the written paths. */
+export function writeLauncherFiles(paths, opts) {
   writeFileAtomic(paths.launcher, fs.readFileSync(LAUNCHER_TEMPLATE));
   // launcher.js is CommonJS; pin that so a stray {"type":"module"} package.json in a
   // parent folder (e.g. the user's home) can never change how it loads.
@@ -39,9 +70,10 @@ export function writeLauncherFiles(paths) {
   const sh = path.join(paths.binDir, 'td');
   writeFileAtomic(cmd, SHIM_CMD);
   writeFileAtomic(sh, SHIM_SH);
-  return { launcher: paths.launcher, cmd, sh };
+  writeMarker(paths, opts);
+  return { launcher: paths.launcher, cmd, sh, marker: markerFile(paths) };
 }
 
 export function launcherFilesPresent(paths) {
-  return fs.existsSync(paths.launcher) && fs.existsSync(path.join(paths.binDir, 'td.cmd'));
+  return fs.existsSync(paths.launcher) && fs.existsSync(path.join(paths.binDir, 'td.cmd')) && !!readMarker(paths);
 }

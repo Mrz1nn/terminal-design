@@ -39,6 +39,21 @@ test('normalize never invents values for an empty payload', () => {
   assert.equal(d.cost.estimatedUsd, null);
 });
 
+test('non-object payloads are treated as empty', () => {
+  for (const v of [null, 42, 'x', []]) assert.equal(normalize(v).model.name, null);
+});
+
+test('limits are hidden once their reset time has passed', () => {
+  const { config, theme, paths } = setup();
+  const after = 1794967200 * 1000 + 1000; // after both resets
+  const out = renderStatusLine(REAL_PAYLOAD, { config, theme, paths, git: null, now: after, colorMode: 'none', width: 200 });
+  assert.doesNotMatch(out, /5h|7d/);
+  const mid = 1794446400 * 1000 + 1000; // 5h reset passed, 7d not yet
+  const out2 = renderStatusLine(REAL_PAYLOAD, { config, theme, paths, git: null, now: mid, colorMode: 'none', width: 200 });
+  assert.doesNotMatch(out2, /5h/);
+  assert.match(out2, /7d/);
+});
+
 test('formatters', () => {
   assert.equal(formatTokens(94173), '94k');
   assert.equal(formatTokens(1000000), '1M');

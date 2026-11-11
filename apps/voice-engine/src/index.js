@@ -21,8 +21,8 @@ export { MODELS, PINNED_RELEASE, voicePaths, pickRelease, formatBytes } from './
 export { resolveOptions, createEngine, listDevices, recordOnce, transcribeFile, cleanTempDir, SILENCE_PEAK, planSetup, runSetup };
 
 /** Plan + confirm + download. See setup.js for the details. */
-export async function setup({ config, model, latest, force, whisperPath, modelPath, confirm, log } = {}) {
-  const plan = await planSetup({ config, model, latest, force, whisperPath, modelPath });
+export async function setup({ config, model, latest, force, allowUnverified, whisperPath, modelPath, confirm, log } = {}) {
+  const plan = await planSetup({ config, model, latest, force, allowUnverified, whisperPath, modelPath });
   return { plan, ...(await runSetup(plan, { confirm, log })) };
 }
 

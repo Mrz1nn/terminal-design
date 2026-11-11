@@ -11,6 +11,23 @@ export function readJson(file, fallback = undefined) {
 }
 
 /**
+ * Strict read for files we are about to modify: missing file -> `missing`,
+ * unreadable/invalid JSON or non-object -> throws. Never returns a silent default
+ * for a broken file, so we can't overwrite a user's file with partial content.
+ */
+export function readJsonForUpdate(file, missing = {}) {
+  if (!fs.existsSync(file)) return missing;
+  let value;
+  try {
+    value = JSON.parse(stripBom(fs.readFileSync(file, 'utf8')));
+  } catch (err) {
+    throw new Error(`não consegui ler ${file}: ${err.message}. Corrija o arquivo antes; nada foi alterado.`);
+  }
+  if (!isPlainObject(value)) throw new Error(`${file} não contém um objeto JSON; nada foi alterado.`);
+  return value;
+}
+
+/**
  * Parse JSON with comments and trailing commas (Windows Terminal / VS Code settings).
  * String contents are preserved; only comments outside strings are removed.
  */
