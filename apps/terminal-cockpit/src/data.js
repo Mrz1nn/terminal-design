@@ -2,7 +2,6 @@
 // Rule: every value comes from the official payload (https://code.claude.com/docs/en/statusline).
 // Anything missing stays null; widgets decide whether to hide it or show "n/d".
 // Nothing is estimated or invented here.
-import path from 'node:path';
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const str = (v) => (typeof v === 'string' && v.length ? v : null);
@@ -75,7 +74,8 @@ export function normalize(raw) {
       : null,
     cwd,
     projectDir,
-    projectName: projectDir ? path.basename(projectDir) : null,
+    // Claude Code on Windows sends backslash paths; take the last segment on any OS (WSL, CI).
+    projectName: projectDir ? baseName(projectDir) : null,
     addedDirs: Array.isArray(raw.workspace?.added_dirs) ? raw.workspace.added_dirs.length : 0,
     agentName: str(raw.agent?.name),
     vimMode: str(raw.vim?.mode),
@@ -86,6 +86,11 @@ export function normalize(raw) {
     worktree: raw.worktree ? { name: str(raw.worktree.name), branch: str(raw.worktree.branch) } : null,
     repo: raw.workspace?.repo ?? null,
   };
+}
+
+function baseName(p) {
+  const parts = String(p).replace(/[\\/]+$/, '').split(/[\\/]/);
+  return parts[parts.length - 1] || null;
 }
 
 export function formatTokens(n) {

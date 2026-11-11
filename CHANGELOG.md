@@ -12,6 +12,8 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 ### Corrigido
 - O workflow de release roda os testes com `node --test`, que funciona em todas as versões do Node.
+- O nome do projeto na status line saía errado quando o Terminal-Design rodava fora do Windows (WSL, Linux) e o caminho vinha com barras invertidas.
+- O `td doctor` não acusa mais erro quando a voz, que é opcional, ainda não foi configurada ou quando não há microfone. Esses casos agora aparecem como pendência. A verificação do atalho deixou de aparecer duas vezes.
 
 ## [0.1.0] - 2026-11-11
 

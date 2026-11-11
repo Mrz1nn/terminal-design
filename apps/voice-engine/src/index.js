@@ -68,7 +68,7 @@ export async function doctor(opts, { probeMic = true } = {}) {
   try {
     const hk = parseHotkey(opts.hotkey);
     const w = hotkeyWarnings(hk);
-    checks.push({ name: 'Atalho de voz', ok: w.length ? null : true, detail: w.length ? w.join(' ') : hk.label });
+    checks.push({ name: 'Atalho de voz', ok: w.length ? null : true, detail: w.length ? w.join(' ') : `${hk.label} (${opts.mode})` });
   } catch (e) {
     checks.push({ name: 'Atalho de voz', ok: false, detail: e.message });
   }
@@ -78,7 +78,9 @@ export async function doctor(opts, { probeMic = true } = {}) {
   checks.push({ name: 'PowerShell', ok: psOk, detail: psOk ? `Windows PowerShell ${ps.stdout.trim()}` : `powershell.exe indisponível (${ps.error?.message ?? ps.stderr?.trim()})` });
 
   if (!opts.whisper.exists) {
-    checks.push({ name: 'whisper.cpp', ok: false, detail: opts.whisper.path ? `não encontrado: ${opts.whisper.path}` : 'não instalado (td voice setup)' });
+    // Voice is optional: "not set up yet" is a warning (null). A configured path that is missing is an error.
+    const explicit = opts.whisper.source && !/td voice setup/.test(opts.whisper.source);
+    checks.push({ name: 'whisper.cpp', ok: explicit ? false : null, detail: explicit ? `não encontrado: ${opts.whisper.path} (${opts.whisper.source})` : 'não instalado, opcional (td voice setup)' });
   } else {
     const r = spawnSync(opts.whisper.path, ['--help'], { encoding: 'utf8', windowsHide: true, timeout: 20000 });
     const ran = r.status === 0 || /usage/i.test(`${r.stdout}${r.stderr}`);
@@ -86,7 +88,8 @@ export async function doctor(opts, { probeMic = true } = {}) {
   }
 
   if (!opts.model.exists) {
-    checks.push({ name: 'modelo', ok: false, detail: `${opts.model.path ?? opts.modelName} ausente (td voice setup --model=${opts.modelName})` });
+    const explicitModel = opts.model.source === 'config voice.modelPath' || opts.model.source === 'opção --model-path';
+    checks.push({ name: 'modelo', ok: explicitModel ? false : null, detail: `${opts.model.path ?? opts.modelName} ausente${explicitModel ? '' : ', opcional'} (td voice setup --model=${opts.modelName})` });
   } else if (opts.model.name && MODELS[opts.model.name]) {
     const v = await verifyModel(opts.model.path, opts.model.name, { vp: opts.vp });
     checks.push({ name: `modelo ${opts.model.name}`, ok: v.ok, detail: v.detail });
@@ -94,18 +97,12 @@ export async function doctor(opts, { probeMic = true } = {}) {
     checks.push({ name: 'modelo', ok: null, detail: `${opts.model.path} (externo, sem hash conhecido)` });
   }
 
-  try {
-    parseHotkey(opts.hotkey);
-    checks.push({ name: 'atalho', ok: true, detail: `${parseHotkey(opts.hotkey).label} (${opts.mode})` });
-  } catch (e) {
-    checks.push({ name: 'atalho', ok: false, detail: e.message });
-  }
 
   if (probeMic && psOk) {
     try {
       const devices = await listDevices(opts);
       const want = String(opts.microphone ?? 'default');
-      let ok = devices.length > 0;
+      let ok = devices.length > 0 ? true : null; // no microphone: voice unavailable, not an install error
       let detail = ok ? `${devices.length} encontrado(s): ${devices.map((d) => `${d.index}=${d.name}`).join(', ')}` : 'nenhum microfone encontrado';
       if (ok && want !== 'default') {
         const match = /^\d+$/.test(want)
@@ -115,7 +112,7 @@ export async function doctor(opts, { probeMic = true } = {}) {
       }
       checks.push({ name: 'microfone', ok, detail });
     } catch (e) {
-      checks.push({ name: 'microfone', ok: false, detail: e.message });
+      checks.push({ name: 'microfone', ok: null, detail: `não foi possível listar: ${e.message}` });
     }
   }
   return checks;

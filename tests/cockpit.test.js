@@ -39,6 +39,12 @@ test('normalize never invents values for an empty payload', () => {
   assert.equal(d.cost.estimatedUsd, null);
 });
 
+test('project name works for Windows and POSIX paths on any OS', () => {
+  assert.equal(normalize({ workspace: { project_dir: 'C:\\dev\\proj\\' } }).projectName, 'proj');
+  assert.equal(normalize({ workspace: { project_dir: '/home/u/proj' } }).projectName, 'proj');
+  assert.equal(normalize({ cwd: 'D:\\x\\y' }).projectName, 'y');
+});
+
 test('non-object payloads are treated as empty', () => {
   for (const v of [null, 42, 'x', []]) assert.equal(normalize(v).model.name, null);
 });
