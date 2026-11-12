@@ -65,10 +65,13 @@ jobs:
           sl() { env -i HOME="$HOME" PATH=/usr/bin:/bin sh -c "$CMD" < "$SAMPLE"; }
 
           echo "::group::status line starts the background check"
-          sl > /dev/null
+          sl; echo
           CACHE="$HOME/.local/share/terminal-design/cache/update-check.json"
           for i in $(seq 1 60); do [ -s "$CACHE" ] && break; sleep 1; done
-          cat "$CACHE"; echo
+          ls -la "$HOME/.local/share/terminal-design/cache" || true
+          cat "$HOME/.config/terminal-design/config.json" || true
+          env | grep -E '^(TD_|CI=|GITHUB_ACTIONS)' || true
+          cat "$CACHE" || true; echo
           echo "::endgroup::"
           OUT=$(sl); echo "$OUT"
           echo "$OUT" | grep -q "atualizar para $LATEST" || { echo "::error::aviso de atualização não apareceu"; exit 1; }
@@ -113,10 +116,13 @@ jobs:
           Write-Host "status line: $cmd"
           function SL { cmd /d /c "$cmd < `"$sample`"" | Out-String }
 
-          $null = SL
+          SL | Write-Host
           $cache = "$env:TD_DATA_HOME\cache\update-check.json"
           for ($i = 0; $i -lt 60 -and -not (Test-Path $cache); $i++) { Start-Sleep 1 }
-          Get-Content $cache -Raw
+          Get-ChildItem "$env:TD_DATA_HOME\cache" -ErrorAction SilentlyContinue | Format-Table Name, Length | Out-String | Write-Host
+          Get-Content "$env:TD_CONFIG_HOME\config.json" -Raw -ErrorAction SilentlyContinue | Write-Host
+          Get-ChildItem Env: | Where-Object Name -match '^(TD_|CI$)' | Format-Table Name, Value | Out-String | Write-Host
+          Get-Content $cache -Raw -ErrorAction SilentlyContinue | Write-Host
           $out = SL; Write-Host $out
           Check ($out -match "atualizar para $([regex]::Escape($env:LATEST))") 'aviso de atualização não apareceu'
 
