@@ -67,7 +67,8 @@ jobs:
           echo "::group::status line starts the background check"
           sl; echo
           CACHE="$HOME/.local/share/terminal-design/cache/update-check.json"
-          for i in $(seq 1 60); do [ -s "$CACHE" ] && break; sleep 1; done
+          # The file appears at once (lastAttemptAt); the background check adds checkedAt when GitHub answers.
+          for i in $(seq 1 90); do grep -q checkedAt "$CACHE" 2>/dev/null && break; sleep 1; done
           ls -la "$HOME/.local/share/terminal-design/cache" || true
           cat "$HOME/.config/terminal-design/config.json" || true
           env | grep -E '^(TD_|CI=|GITHUB_ACTIONS)' || true
@@ -98,6 +99,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          # Pass "cmd /c <command line>" verbatim, like Claude Code does (pwsh 7 would escape the inner quotes).
+          $PSNativeCommandArgumentPassing = 'Legacy'
           $root = "$env:RUNNER_TEMP\e2e"
           $env:TD_DATA_HOME = "$root\data"
           $env:TD_CONFIG_HOME = "$root\config"
@@ -118,7 +121,7 @@ jobs:
 
           SL | Write-Host
           $cache = "$env:TD_DATA_HOME\cache\update-check.json"
-          for ($i = 0; $i -lt 60 -and -not (Test-Path $cache); $i++) { Start-Sleep 1 }
+          for ($i = 0; $i -lt 90 -and -not ((Test-Path $cache) -and (Select-String -Path $cache -Pattern checkedAt -Quiet)); $i++) { Start-Sleep 1 }
           Get-ChildItem "$env:TD_DATA_HOME\cache" -ErrorAction SilentlyContinue | Format-Table Name, Length | Out-String | Write-Host
           Get-Content "$env:TD_CONFIG_HOME\config.json" -Raw -ErrorAction SilentlyContinue | Write-Host
           Get-ChildItem Env: | Where-Object Name -match '^(TD_|CI$)' | Format-Table Name, Value | Out-String | Write-Host
