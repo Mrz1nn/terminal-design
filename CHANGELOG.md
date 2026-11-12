@@ -4,6 +4,25 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 ## [Não lançado]
 
+## [0.2.2] - 2026-11-12
+
+### Adicionado
+- Botão de microfone redesenhado, no estilo do microfone do ChatGPT: compacto, escuro, com bordas suaves e nítido em telas com escala. Estados bem distintos: pronto, gravando (barras de áudio e um halo que acompanha a sua voz), transcrevendo (arco girando), concluído (visto verde), texto guardado (prancheta âmbar) e erro (anel vermelho). As animações só rodam enquanto há algo acontecendo.
+- Botão de copiar ao lado do microfone depois de cada transcrição. A última transcrição pode ser copiada sempre, tenha sido inserida ou não.
+- Inserção automática opcional: `td config set voice.autoInsert false` (ou `--no-insert`) faz o td voice nunca digitar; o texto fica pronto para copiar.
+- `voice.topmost` (ou `--no-topmost`) decide se o botão fica por cima das outras janelas.
+- O botão lembra se você o escondeu.
+- `td voice autostart on|off|status`: inicia a voz quando você entra no Windows, por um atalho na sua pasta Inicializar. Sem administrador e sem registro. O `td uninstall` remove o atalho.
+- `td help <comando>`.
+
+### Alterado
+- Códigos de saída padronizados em todos os comandos: `0` sucesso, `1` falha, `2` erro de uso (comando ou subcomando desconhecido, argumento faltando, inválido ou sobrando). Antes, `td voice` saía com 2 e `td config`, `td theme` e `td claude` com 1 no mesmo caso.
+- O aviso de texto da voz virou uma pílula discreta ao lado do botão.
+- Configurações liga/desliga (`voice.button`, `voice.topmost`, `voice.autoInsert` e outras) só aceitam `true` ou `false`; um texto como `"false"` volta ao padrão em vez de ser lido errado.
+
+### Segurança
+- A voz não digita mais em janelas abertas como administrador quando ela mesma não é: o Windows descartaria as teclas sem avisar e o texto se perderia. Agora a inserção é cancelada e o texto fica pronto para copiar.
+
 ## [0.2.1] - 2026-11-11
 
 ### Corrigido
