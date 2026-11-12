@@ -5,7 +5,6 @@
 #
 # Opções (com pipe, use variáveis de ambiente):
 #   --no-claude   / TD_NO_CLAUDE=1   não configura a status line do Claude Code
-#   --no-voice    / TD_NO_VOICE=1    (digitação por voz ainda não existe no macOS/Linux)
 #   --theme=nome  / TD_THEME=nome    tema inicial
 #   --no-path     / TD_NO_PATH=1     não mexe nos arquivos de perfil do shell
 #   exemplo: curl -fsSL .../get.sh | TD_THEME=nord sh
@@ -35,18 +34,16 @@ td_get_main() {
   td_release_base=${TD_RELEASE_BASE_URL:-https://github.com/$td_repo/releases/latest/download}
   td_node_dist=${TD_NODE_DIST_URL:-https://nodejs.org/dist/latest-v22.x}
   td_no_claude=${TD_NO_CLAUDE:-0}
-  td_no_voice=${TD_NO_VOICE:-0}
   td_no_path=${TD_NO_PATH:-0}
   td_theme=${TD_THEME:-}
 
   for td_arg in "$@"; do
     case "$td_arg" in
       --no-claude) td_no_claude=1 ;;
-      --no-voice) td_no_voice=1 ;;
       --no-path) td_no_path=1 ;;
       --theme=*) td_theme=${td_arg#--theme=} ;;
       -h|--help)
-        printf 'Uso: curl -fsSL https://raw.githubusercontent.com/%s/main/scripts/get.sh | sh -s -- [--no-claude] [--no-voice] [--no-path] [--theme=nome]\n' "$td_repo"
+        printf 'Uso: curl -fsSL https://raw.githubusercontent.com/%s/main/scripts/get.sh | sh -s -- [--no-claude] [--no-path] [--theme=nome]\n' "$td_repo"
         return 0 ;;
       *) td_fail "opção desconhecida: $td_arg" ;;
     esac
@@ -110,7 +107,6 @@ td_get_main() {
   printf '  • %s\n' "$td_node_note"
   if [ "$td_no_claude" = 1 ]; then printf '  • Claude Code: não configurado (rode depois: td claude install)\n'
   else printf '  • Claude Code: status line configurada\n'; fi
-  if [ "$td_no_voice" != 1 ]; then printf '  • voz: ainda não disponível no macOS/Linux (só no Windows por enquanto)\n'; fi
   if [ "$td_no_path" = 1 ]; then printf '\nPronto. Rode: "%s/bin/td"\n' "$td_data_home"
   else printf '\nPronto. Abra um terminal novo e digite td\n'; fi
 }

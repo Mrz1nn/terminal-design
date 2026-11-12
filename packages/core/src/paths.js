@@ -38,7 +38,6 @@ export function getPaths() {
     backups: path.join(dataHome, 'backups'),
     cache: path.join(dataHome, 'cache'),
     staging: path.join(dataHome, 'staging'),
-    voice: path.join(dataHome, 'voice'),
     logs: path.join(dataHome, 'logs'),
     claudeHome: process.env.CLAUDE_CONFIG_DIR
       ? path.resolve(process.env.CLAUDE_CONFIG_DIR)

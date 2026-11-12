@@ -86,7 +86,6 @@ jobs:
           $env:TD_DATA_HOME = "$env:RUNNER_TEMP\td-get-data"
           $env:TD_CONFIG_HOME = "$env:RUNNER_TEMP\td-get-config"
           $env:CLAUDE_CONFIG_DIR = "$env:RUNNER_TEMP\td-get-claude"
-          $env:TD_NO_VOICE = '1'
           $env:TD_NO_PATH = '1'
           $env:TD_RELEASE_ZIP = "$env:RUNNER_TEMP\dist\terminal-design-$v.zip"
           $env:TD_RELEASE_SUMS = "$env:RUNNER_TEMP\dist\SHA256SUMS.txt"

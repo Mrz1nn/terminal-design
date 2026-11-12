@@ -3,18 +3,17 @@
 #   irm https://raw.githubusercontent.com/Mrz1nn/terminal-design/main/scripts/get.ps1 | iex
 #
 # Opções (com pipe, use variáveis de ambiente antes do comando):
-#   $env:TD_NO_VOICE = '1'    não instala a digitação por voz (td voice setup, ~150 MB)
 #   $env:TD_NO_CLAUDE = '1'   não configura a status line do Claude Code
 #   $env:TD_THEME = 'nord'    tema inicial
 #   $env:TD_NO_PATH = '1'     não mexe no PATH do usuário
-# Como arquivo: powershell -ExecutionPolicy Bypass -File get.ps1 -NoVoice -NoClaude -Theme nord -NoPath
+# Como arquivo: powershell -ExecutionPolicy Bypass -File get.ps1 -NoClaude -Theme nord -NoPath
 #
 # O que acontece:
 #   1. Node.js 18.17+: usa o seu; se faltar, instala o Node.js LTS com o winget
 #      (OpenJS.NodeJS.LTS). Sem winget, baixa o zip oficial de nodejs.org, confere o
 #      SHA-256 e coloca em %LOCALAPPDATA%\TerminalDesign\node (só para o Terminal-Design).
 #   2. Baixa a última release do GitHub, confere o SHA-256 e só então extrai.
-#   3. Roda scripts\install.ps1 da release com -ClaudeCode e, por fim, td voice setup --yes.
+#   3. Roda scripts\install.ps1 da release com -ClaudeCode.
 # Nada baixado é executado antes da verificação do checksum.
 #
 # Variáveis para testes/CI:
@@ -26,7 +25,6 @@
 # never runs half of the script.
 function Install-TerminalDesign {
   param(
-    [switch]$NoVoice,
     [switch]$NoClaude,
     [switch]$NoPath,
     [string]$Theme
@@ -36,7 +34,6 @@ function Install-TerminalDesign {
   $ProgressPreference = 'SilentlyContinue'
   try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
 
-  if ($env:TD_NO_VOICE -eq '1') { $NoVoice = $true }
   if ($env:TD_NO_CLAUDE -eq '1') { $NoClaude = $true }
   if ($env:TD_NO_PATH -eq '1') { $NoPath = $true }
   if (-not $Theme -and $env:TD_THEME) { $Theme = $env:TD_THEME }
@@ -207,15 +204,6 @@ function Install-TerminalDesign {
     try { & powershell.exe @installArgs } finally { $env:PSModulePath = $savedModulePath }
     if ($LASTEXITCODE -ne 0) { Fail 'o instalador terminou com erro (veja acima)' }
 
-    $launcher = Join-Path $dataHome 'launcher.js'
-    $voiceNote = 'voz: não instalada (rode depois: td voice setup)'
-    if (-not $NoVoice) {
-      Write-Host ''
-      Step 'instalando a digitação por voz (td voice setup --yes, ~150 MB)…'
-      & $node $launcher voice setup --yes
-      if ($LASTEXITCODE -eq 0) { $voiceNote = 'voz: instalada (modelo base)' }
-      else { $voiceNote = 'voz: não foi possível instalar agora (rode depois: td voice setup)' }
-    }
 
     # ---- summary --------------------------------------------------------------
     Write-Host ''
@@ -224,7 +212,6 @@ function Install-TerminalDesign {
     Write-Host "  • programa: $dataHome"
     Write-Host "  • $nodeNote"
     if ($NoClaude) { Write-Host '  • Claude Code: não configurado (rode depois: td claude install)' } else { Write-Host '  • Claude Code: status line configurada' }
-    Write-Host "  • $voiceNote"
     Write-Host ''
     if ($NoPath) { Write-Host "Pronto. Rode: `"$(Join-Path $dataHome 'bin\td.cmd')`"" -ForegroundColor Green }
     else { Write-Host 'Pronto. Abra um terminal novo e digite td' -ForegroundColor Green }
@@ -244,7 +231,6 @@ function Install-TerminalDesign {
 $tdGetArgs = @{}
 for ($i = 0; $i -lt $args.Count; $i++) {
   switch -Regex ($args[$i]) {
-    '^-NoVoice$' { $tdGetArgs.NoVoice = $true }
     '^-NoClaude$' { $tdGetArgs.NoClaude = $true }
     '^-NoPath$' { $tdGetArgs.NoPath = $true }
     '^-Theme$' { $i++; $tdGetArgs.Theme = $args[$i] }

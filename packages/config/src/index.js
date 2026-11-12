@@ -10,14 +10,10 @@ const ENUMS = {
   'cockpit.locale': ['pt-BR', 'en'],
   'update.auto': ['off', 'notify'],
   'update.channel': ['stable', 'prerelease'],
-  'voice.mode': ['push-to-talk', 'toggle'],
-  'voice.language': ['pt', 'en', 'auto'],
-  'voice.model': ['tiny', 'base', 'small', 'medium'],
-  'voice.insertMode': ['type', 'paste'],
 };
 
 // On/off settings: anything that is not true/false is a mistake (e.g. "false" typed as text).
-const BOOLEANS = ['voice.enabled', 'voice.appendSpace', 'voice.overlay', 'voice.tray', 'voice.button', 'voice.topmost', 'voice.autoInsert', 'cockpit.showUnavailable', 'cockpit.git.enabled', 'telemetry'];
+const BOOLEANS = ['cockpit.showUnavailable', 'cockpit.git.enabled', 'telemetry'];
 
 export function getAt(obj, dotted) {
   return dotted.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
@@ -49,8 +45,6 @@ export function validate(cfg) {
   if (rows != null && !(Array.isArray(rows) && rows.every((r) => Array.isArray(r)))) {
     errors.push('cockpit.rows: precisa ser uma lista de linhas, cada uma uma lista de widgets');
   }
-  const n = getAt(cfg, 'voice.maxSeconds');
-  if (n !== undefined && !(Number.isFinite(n) && n > 0 && n <= 600)) errors.push('voice.maxSeconds: entre 1 e 600');
   return errors;
 }
 

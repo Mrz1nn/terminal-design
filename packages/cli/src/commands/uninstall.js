@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { removeInstall, removeUserPath } from '../../../updater/src/index.js';
-import { disableAutostart } from '../../../../apps/voice-engine/src/autostart.js';
 
 async function loadIntegration(appRoot, name) {
   const file = path.join(appRoot, 'integrations', name, 'index.js');
@@ -63,14 +62,6 @@ export default {
       } catch (err) {
         ui.warn(`Windows Terminal: não foi possível remover os esquemas (${err.message}).`);
       }
-    }
-
-    // Voice autostart: the Startup shortcut would point at files that are about to be deleted.
-    try {
-      const r = disableAutostart(paths);
-      if (r.removed.length) ui.ok(`Voz: inicialização automática removida (${r.removed.join(', ')}).`);
-    } catch (err) {
-      ui.warn(`Voz: não foi possível remover o atalho de inicialização (${err.message}). Rode td voice autostart off antes.`);
     }
 
     {

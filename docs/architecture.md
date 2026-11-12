@@ -2,7 +2,7 @@
 
 ## Princípios
 
-1. **Os módulos são independentes.** O cockpit, os temas, o atualizador e a voz funcionam sozinhos. Eles só têm em comum `packages/core` e `packages/config`.
+1. **Os módulos são independentes.** O cockpit, os temas e o atualizador funcionam sozinhos. Eles só têm em comum `packages/core` e `packages/config`.
 2. **Tema é dado, não código.** Um tema é um JSON. Os widgets pedem cores ao *painter* (`apps/terminal-cockpit/src/paint.js`) e não sabem qual tema está ativo.
 3. **As três zonas de arquivos nunca se misturam** (`packages/core/src/paths.js`):
 
@@ -10,7 +10,7 @@
 |---|---|---|---|
 | Programa (`appRoot`) | `%LOCALAPPDATA%\TerminalDesign\versions\<v>` | Código | Só o instalador e o `td update` |
 | Configuração (`configHome`) | `%APPDATA%\TerminalDesign` | `config.json` e `themes\` do usuário | Só o usuário e os comandos `td config` e `td theme` (sempre com backup antes) |
-| Dados (`dataHome`) | `%LOCALAPPDATA%\TerminalDesign` | `versions\`, `backups\`, `cache\`, `voice\`, `launcher.js`, `bin\` | O próprio td |
+| Dados (`dataHome`) | `%LOCALAPPDATA%\TerminalDesign` | `versions\`, `backups\`, `cache\`, `launcher.js`, `bin\` | O próprio td |
 
    As variáveis `TD_CONFIG_HOME` e `TD_DATA_HOME` mudam esses caminhos. Os testes usam isso para nunca tocar nos arquivos reais.
 4. **Nenhuma métrica é inventada.** `apps/terminal-cockpit/src/data.js` converte o payload oficial em um formato estável. O que não existe fica `null`.
@@ -55,16 +55,12 @@ export default {
 
 Veja [updating.md](updating.md). Em resumo: as versões ficam lado a lado em `versions\`, o `current.json` aponta a ativa e o `launcher.js` é estável. O Claude Code e o PATH sempre chamam o launcher, então trocar de versão é só reescrever o `current.json` de forma atômica, e o rollback é imediato.
 
-## Voz
-
-Veja [voice.md](voice.md). Um host em PowerShell 5.1 com C# compilado em tempo de execução (via `Add-Type`) cuida do atalho global, do microfone e da inserção de texto. O Node cuida da lógica e do whisper.cpp. Os dois conversam por JSON lines no stdin e no stdout.
 
 ## Decisões
 
 | Decisão | Motivo |
 |---|---|
 | Node.js sem dependências | O Claude Code já exige Node. Assim não há licenças de terceiros para auditar no runtime e a instalação fica trivial. |
-| PowerShell e C# via Add-Type para a voz | Já vêm em todo Windows 10 e 11. Não exige compilador, Python nem binários extras além do whisper.cpp. |
 | Fragmentos JSON no Windows Terminal | É o mecanismo oficial de extensão. Nunca editamos o `settings.json` do usuário, que costuma ter comentários. |
 | Snippet para o VS Code | Também evita editar um JSONC do usuário. |
 | GitHub Releases com SHA256SUMS | É gratuito, versionado e verificável. |

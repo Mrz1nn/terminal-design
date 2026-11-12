@@ -4,6 +4,11 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 ## [Não lançado]
 
+## [0.3.0] - 2026-11-12
+
+### Removido
+- Digitação por voz inteira: `td voice` e todos os subcomandos, o botão flutuante de microfone, a inicialização com o Windows, as chaves `voice.*` da configuração, o download do whisper.cpp e do modelo no instalador de uma linha (e as opções `TD_NO_VOICE`, `-NoVoice` e `--no-voice`) e a documentação. O `td uninstall` ainda apaga a pasta `voice` deixada por versões anteriores.
+
 ## [0.2.2] - 2026-11-12
 
 ### Adicionado

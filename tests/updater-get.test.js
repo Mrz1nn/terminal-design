@@ -1,6 +1,6 @@
 // One-line installers (scripts/get.sh, scripts/get.ps1) against LOCAL overrides only:
 // a release zip built by scripts/pack-release.js, temp TD_DATA_HOME / TD_CONFIG_HOME /
-// CLAUDE_CONFIG_DIR / HOME, TD_NO_PATH=1 and TD_NO_VOICE=1. No network, no real PATH.
+// CLAUDE_CONFIG_DIR / HOME, and TD_NO_PATH=1. No network, no real PATH.
 import { test, describe, after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -47,7 +47,6 @@ function sandbox() {
     TD_CONFIG_HOME: path.join(base, 'config'),
     CLAUDE_CONFIG_DIR: path.join(base, 'claude'),
     TD_NO_PATH: '1',
-    TD_NO_VOICE: '1',
     TD_NO_UPDATE_CHECK: '1',
     NO_COLOR: '1',
     TD_RELEASE_ZIP: path.join(dist, `terminal-design-${version}.zip`),

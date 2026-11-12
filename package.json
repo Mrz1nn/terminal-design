@@ -1,7 +1,7 @@
 {
   "name": "terminal-design",
-  "version": "0.2.2",
-  "description": "Open source terminal cockpit for Windows: Claude Code status line, themes, self-updater and offline voice typing.",
+  "version": "0.3.0",
+  "description": "Open source terminal cockpit for Windows: Claude Code status line, themes, and self-updater.",
   "license": "MIT",
   "type": "module",
   "private": true,
@@ -36,8 +36,6 @@
     "statusline",
     "claude-code",
     "themes",
-    "windows-terminal",
-    "whisper",
-    "voice"
+    "windows-terminal"
   ]
 }

@@ -20,7 +20,7 @@ Não há `npm install`, porque o projeto não tem dependências. Para testar sem
 2. **Nenhuma métrica inventada.** Todo número exibido precisa vir de uma fonte oficial ou do sistema local. Estimativas precisam aparecer como estimativas (por exemplo, `est.`).
 3. **Não destruir configuração.** Faça backup antes de alterar qualquer arquivo de outro programa e grave sempre de forma atômica (`writeJsonAtomic`).
 4. **Nada de rede sem o usuário pedir.** A status line nunca acessa a rede.
-5. **Os módulos são independentes.** O cockpit não importa a voz e a voz não importa o cockpit. O que for comum vai para `packages/core`.
+5. **Os módulos são independentes.** O cockpit não importa o atualizador e o atualizador não importa o cockpit. O que for comum vai para `packages/core`.
 6. **Um teste para cada comportamento novo**, usando `node:test`.
 
 ## Convenções

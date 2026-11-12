@@ -6,7 +6,7 @@ O arquivo guarda **só o que você mudou**. Tudo o que falta vem dos padrões em
 
 ```powershell
 td config                         # configuração efetiva
-td config get voice.hotkey
+td config get cockpit.layout
 td config set cockpit.locale en
 td config reset cockpit.layout
 td config edit                    # abre no editor ($EDITOR ou Bloco de Notas) e valida ao fechar
@@ -32,7 +32,6 @@ Se o arquivo tiver um valor inválido, o td usa o padrão daquela chave e avisa 
 | `update.checkIntervalHours` | `24` | |
 | `update.channel` | `stable` | `stable`, `prerelease` |
 | `update.repository` | `null` | `dono/repo` (para forks). `null` usa o do package.json |
-| `voice.*` | | Veja [voice.md](voice.md) |
 | `telemetry` | `false` | O td não tem telemetria. A chave existe só para deixar isso explícito. |
 
 ## Variáveis de ambiente

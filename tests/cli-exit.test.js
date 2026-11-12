@@ -42,11 +42,7 @@ const USAGE_CASES = [
   [['theme', 'xyz'], /subcomando desconhecido: td theme xyz/],
   [['config', 'xyz'], /subcomando desconhecido: td config xyz/],
   [['claude', 'xyz'], /subcomando desconhecido: td claude xyz/],
-  [['voice', 'xyz'], /subcomando desconhecido: td voice xyz/],
-  [['voice', 'autostart', 'talvez'], /autostart on, off ou status/],
-  [['voice', 'status', 'extra'], /argumento inesperado/],
-  [['voice', 'status', '--language=klingon'], /--language inválido/],
-  [['voice', 'status', '--mode=sempre'], /--mode inválido/],
+  [['voice'], /comando desconhecido: voice/],
   [['config', 'get'], /informe a chave/],
   [['config', 'set', 'cockpit.layout'], /uso: td config set/],
   [['config', 'set', 'chave.que.nao.existe', '1'], /chave desconhecida/],
@@ -78,9 +74,9 @@ test('success exits 0', () => {
   assert.equal(td('version').code, 0);
   assert.equal(td('help').code, 0);
   assert.equal(td('theme', '--help').code, 0);
-  const h = td('help', 'voice');
+  const h = td('help', 'theme');
   assert.equal(h.code, 0);
-  assert.match(h.out, /td voice autostart on\|off\|status/);
+  assert.match(h.out, /td theme list/);
   assert.equal(td('config', 'get', 'cockpit.layout').code, 0);
 });
 

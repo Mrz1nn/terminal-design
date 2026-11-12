@@ -30,7 +30,7 @@ test('config: defaults, set, invalid values rejected, user file minimal', () => 
   assert.equal(loadConfig(paths).cockpit.layout, 'full');
   assert.throws(() => setConfigValue('cockpit.layout', 'giant', paths));
   const onDisk = JSON.parse(fs.readFileSync(paths.configFile, 'utf8'));
-  assert.equal(onDisk.voice, undefined, 'only changed keys are stored');
+  assert.equal(onDisk.update, undefined, 'only changed keys are stored');
   // A hand-edited invalid value falls back to the default instead of crashing.
   fs.writeFileSync(paths.configFile, JSON.stringify({ color: { mode: 'rainbow' } }));
   assert.equal(loadConfig(paths).color.mode, 'auto');

@@ -4,7 +4,7 @@ O Terminal-Design roda no **Windows 10/11**, no **macOS** (Intel e Apple Silicon
 
 ## Instalação em uma linha (recomendada)
 
-Um comando instala tudo: Node.js (se faltar), o programa, o atalho `td`, o PATH e a status line do Claude Code. No Windows, instala também a digitação por voz.
+Um comando instala tudo: Node.js (se faltar), o programa, o atalho `td`, o PATH e a status line do Claude Code.
 
 **macOS e Linux** (Terminal):
 
@@ -27,7 +27,6 @@ No fim aparece um resumo do que foi instalado. **Abra um terminal novo e digite 
    - **Windows:** instala o Node.js LTS com o `winget` (`OpenJS.NodeJS.LTS`, pode aparecer uma confirmação do Windows). Sem `winget`, baixa o zip oficial de nodejs.org, confere o SHA-256 e coloca em `%LOCALAPPDATA%\TerminalDesign\node`.
 2. **Programa.** Baixa a última release do GitHub, confere o SHA-256 com o `SHA256SUMS.txt` da release e só então extrai. Se o checksum não bater, para e não instala nada.
 3. **Instalação.** Roda o instalador da própria release (`install.sh --claude-code` ou `install.ps1 -ClaudeCode`).
-4. **Voz** (só Windows). Roda `td voice setup --yes` (modelo `base`, cerca de 150 MB). No macOS e no Linux a voz ainda não existe, e o resumo avisa isso.
 
 O script inteiro fica dentro de uma função chamada só na última linha. Assim, um download cortado no meio não executa nada.
 
@@ -36,7 +35,6 @@ O script inteiro fica dentro de uma função chamada só na última linha. Assim
 | macOS/Linux | Windows | O que faz |
 |---|---|---|
 | `TD_NO_CLAUDE=1` | `$env:TD_NO_CLAUDE='1'` | Não configura a status line do Claude Code. |
-| `TD_NO_VOICE=1` | `$env:TD_NO_VOICE='1'` | Não instala a voz. |
 | `TD_THEME=nord` | `$env:TD_THEME='nord'` | Define o tema inicial. |
 | `TD_NO_PATH=1` | `$env:TD_NO_PATH='1'` | Não mexe no PATH. |
 
@@ -48,7 +46,7 @@ curl -fsSL https://raw.githubusercontent.com/Mrz1nn/terminal-design/main/scripts
 ```
 
 ```powershell
-$env:TD_NO_VOICE = '1'; irm https://raw.githubusercontent.com/Mrz1nn/terminal-design/main/scripts/get.ps1 | iex
+$env:TD_THEME = 'nord'; irm https://raw.githubusercontent.com/Mrz1nn/terminal-design/main/scripts/get.ps1 | iex
 ```
 
 ## Instalação manual

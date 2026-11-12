@@ -24,4 +24,4 @@ body:
     id: module
     attributes:
       label: Módulo
-      options: [Cockpit / status line, Temas, CLI, Atualizador, Voice Engine, Instalador, Outro]
+      options: [Cockpit / status line, Temas, CLI, Atualizador, Instalador, Outro]

@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import { readMarker, LAUNCHER_HEADER, MARKER_NAME } from './launcher.js';
 import { readCurrent } from './store.js';
 
-/** Program files and caches inside dataHome. */
+/** Program files and caches inside dataHome. ('voice' is the folder left by versions up to 0.2.2.) */
 export const DATA_ITEMS = ['versions', 'bin', 'launcher.js', 'package.json', 'current.json', 'staging', 'cache', 'logs', 'voice', 'claude-code-previous.json', 'node', MARKER_NAME];
 /** Extra dataHome items removed only when the config is purged too (they hold config copies). */
 export const DATA_PURGE_ITEMS = ['backups'];

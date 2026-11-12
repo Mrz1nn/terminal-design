@@ -83,7 +83,6 @@ export default {
       `${ui.c.muted('versão')}       ${ctx.version} ${ui.c.muted(`(${ctx.mode})`)}${notice ? `  ${notice}` : ''}`,
       `${ui.c.muted('tema')}         ${theme.displayName ?? theme.name}`,
       `${ui.c.muted('claude code')}  ${st.installed ? ui.c.success('status line ativa') : ui.c.muted('não integrado')}`,
-      `${ui.c.muted('voz')}          ${config.voice.enabled ? `${config.voice.hotkey} · ${config.voice.language}` : ui.c.muted('desativada')}`,
     ];
     out.push(box(inst, theme, ui, 'Terminal-Design'));
 

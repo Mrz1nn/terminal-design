@@ -1,6 +1,6 @@
 # Terminal-Design
 
-Um cockpit para o terminal do Windows e do Mac. Ele mostra uma status line organizada no Claude Code, traz 10 temas de cores, digita por voz sem internet (no Windows) e se atualiza com um único comando.
+Um cockpit para o terminal do Windows e do Mac. Ele mostra uma status line organizada no Claude Code, traz 10 temas de cores e se atualiza com um único comando.
 
 Gratuito, open source (licença MIT), sem assinatura, sem API paga e sem telemetria.
 
@@ -19,14 +19,13 @@ meu-projeto │ ⎇ main +2 ~3 ?1 ↑1 │ +128 −42 │ $1.23 est. │ ⏱ 31m
 6. [Comandos](#comandos)
 7. [Status line do Claude Code](#status-line-do-claude-code)
 8. [Temas](#temas)
-9. [Digitação por voz](#digitação-por-voz)
-10. [Configuração](#configuração)
-11. [Desinstalar](#desinstalar)
-12. [Privacidade e segurança](#privacidade-e-segurança)
-13. [Problemas comuns](#problemas-comuns)
-14. [Estrutura do projeto](#estrutura-do-projeto)
-15. [Como contribuir](#como-contribuir)
-16. [Licença](#licença)
+9. [Configuração](#configuração)
+10. [Desinstalar](#desinstalar)
+11. [Privacidade e segurança](#privacidade-e-segurança)
+12. [Problemas comuns](#problemas-comuns)
+13. [Estrutura do projeto](#estrutura-do-projeto)
+14. [Como contribuir](#como-contribuir)
+15. [Licença](#licença)
 
 ## O que ele faz
 
@@ -35,16 +34,14 @@ meu-projeto │ ⎇ main +2 ~3 ?1 ↑1 │ +128 −42 │ $1.23 est. │ ⏱ 31m
 | Status line | Mostra no Claude Code o modelo, o esforço, o uso do contexto, os limites de 5 horas e de 7 dias com o tempo até renovar, o git, as linhas alteradas, o custo estimado e a duração da sessão. Organiza tudo em 1, 2 ou 3 linhas. |
 | Painel de agentes | Mostra uma linha por subagente, com o estado, o uso de contexto, o tempo e o progresso. |
 | Temas | Traz 10 temas prontos. Você pode mudar qualquer cor, as barras, os separadores e as bordas, e também importar e exportar temas. Envia as cores para o Windows Terminal, o iTerm2 e o VS Code. |
-| Comando `td` | Abre um painel com as informações disponíveis e gerencia temas, configuração, atualização, voz e diagnóstico. |
+| Comando `td` | Abre um painel com as informações disponíveis e gerencia temas, configuração, atualização e diagnóstico. |
 | Atualização | Quando sai uma versão nova, um botão aparece na status line. O comando `td update` baixa a versão, confere a integridade e instala sem mexer na sua configuração. |
-| Voz | Você segura um atalho, fala e solta, e o texto é digitado onde está o cursor. A transcrição é feita no seu computador, em português ou inglês. Por enquanto, só no Windows. |
 
 ## Requisitos
 
 1. Windows 10 ou 11, ou macOS. No Mac, funciona tanto nos modelos com chip Apple (M1, M2, M3, M4 e seguintes) quanto nos modelos Intel. Os testes automáticos rodam no macOS 15 nos dois tipos de processador. Versões mais antigas do macOS que rodam o Node.js 18 ou mais novo também devem funcionar.
 2. [Node.js](https://nodejs.org/pt-br/download) 18.17 ou mais novo. A versão LTS é a recomendada. No Mac, também dá para instalar com `brew install node`.
 3. Para a status line: [Claude Code](https://code.claude.com) instalado.
-4. Para a voz (só no Windows): um microfone e o Microsoft Visual C++ Redistributable x64, que a maioria dos computadores já tem. O `td doctor` avisa se estiver faltando.
 
 Não precisa de permissão de administrador.
 
@@ -70,7 +67,6 @@ Esse único comando faz o seguinte:
    - No Windows, usa o winget, que pode pedir uma confirmação do Windows.
 2. Baixa a versão mais recente e confere o SHA-256 antes de usar qualquer arquivo.
 3. Instala e liga a status line no Claude Code.
-4. No Windows, já baixa a digitação por voz.
 
 Ao terminar, abra um terminal novo e digite `td`.
 
@@ -79,7 +75,6 @@ Opções, para quem quiser personalizar:
 | No Mac | No Windows | Efeito |
 |---|---|---|
 | `TD_NO_CLAUDE=1` | `$env:TD_NO_CLAUDE=1` | Não liga a status line no Claude Code |
-| `TD_NO_VOICE=1` | `$env:TD_NO_VOICE=1` | Não baixa a voz |
 | `TD_THEME=nord` | `$env:TD_THEME='nord'` | Já escolhe um tema |
 
 No Mac, a opção vai antes do `sh`. Por exemplo: `curl -fsSL .../get.sh | TD_THEME=nord sh`. No Windows, defina a variável na mesma janela antes de colar o comando.
@@ -222,10 +217,6 @@ Para religar: `td config set update.auto notify`. Se você usa a versão clonada
 | `td config edit` | Abre o arquivo de configuração no editor |
 | `td claude install` | Liga a status line no Claude Code |
 | `td claude uninstall` | Desliga e devolve a status line que você tinha antes |
-| `td voice` | Inicia a digitação por voz |
-| `td voice setup` | Baixa os arquivos da voz |
-| `td voice test` | Grava alguns segundos e mostra o texto, sem digitar nada |
-| `td voice autostart on` | Inicia a voz quando você entra no Windows (`off` desliga) |
 | `td doctor` | Diagnóstico completo |
 | `td uninstall` | Remove o Terminal-Design |
 
@@ -301,30 +292,6 @@ No **VS Code**, rode `td theme export tokyo-night cores.json --vscode` e cole o 
 
 Os detalhes estão em [docs/themes.md](docs/themes.md).
 
-## Digitação por voz
-
-Por enquanto, a voz funciona só no Windows. No Mac, `td voice` avisa que ainda não há suporte, e o resto do Terminal-Design funciona normalmente.
-
-```powershell
-td voice setup   # baixa o transcritor e o modelo (pergunta antes, mostra tamanho e origem)
-td voice test    # grava 5 segundos e mostra o texto, sem digitar nada
-td voice         # inicia
-```
-
-Com o `td voice` rodando, segure **Ctrl+Shift+F9**, fale e solte. O texto aparece onde está o cursor: CMD, PowerShell, Windows Terminal, VS Code e outros programas.
-
-Se preferir o mouse, use o botão flutuante de microfone: clique para falar e clique de novo para parar. Ele nunca tira o foco da sua janela, mostra quando está gravando, transcrevendo e quando terminou, e oferece um botão de copiar ao lado. Dá para arrastar, esconder, deixar de ficar por cima (`voice.topmost false`), desligar a inserção automática (`voice.autoInsert false`) e iniciar com o Windows (`td voice autostart on`).
-
-Proteções:
-
-1. O texto só vai para a janela que estava em foco quando você começou a falar. Se você trocar de janela, nada é digitado e o texto fica guardado.
-2. Se alguma tecla como Ctrl, Alt ou Shift estiver pressionada na hora de digitar, nada é digitado. Assim as letras nunca viram atalhos.
-3. Janelas abertas como administrador não recebem texto: o Windows descartaria as teclas em silêncio, então o texto fica guardado para copiar.
-4. Para copiar a transcrição, clique no botão de copiar ao lado do microfone, aperte Enter no terminal do `td voice` ou use o menu do ícone perto do relógio.
-5. O áudio nunca sai do computador e é apagado assim que a transcrição termina.
-
-O atalho é configurável: `td config set voice.hotkey "Ctrl+Shift+F8"`. O idioma também: `td config set voice.language en`. O guia completo está em [docs/voice.md](docs/voice.md).
-
 ## Configuração
 
 O arquivo fica em `%APPDATA%\TerminalDesign\config.json` no Windows e em `~/.config/terminal-design/config.json` no Mac. Ele guarda só o que você mudou. Os principais valores:
@@ -336,9 +303,6 @@ O arquivo fica em `%APPDATA%\TerminalDesign\config.json` no Windows e em `~/.con
 | `cockpit.locale` | `pt-BR` | `pt-BR`, `en` |
 | `update.auto` | `notify` | `notify` (avisa) ou `off` |
 | `update.channel` | `stable` | `stable` ou `prerelease` |
-| `voice.hotkey` | `Ctrl+Shift+F9` | Qualquer combinação válida |
-| `voice.language` | `pt` | `pt`, `en`, `auto` |
-| `voice.model` | `base` | `tiny`, `base`, `small`, `medium` |
 
 A lista completa está em [docs/configuration.md](docs/configuration.md).
 
@@ -361,9 +325,7 @@ A desinstalação faz o seguinte:
 1. Não há telemetria.
 2. A internet só é usada para:
    - a consulta diária de versão nova, que pode ser desligada;
-   - o `td update`;
-   - o `td voice setup`.
-   Os dois últimos sempre pedem confirmação.
+   - o `td update`, que sempre pede confirmação.
 3. Todo pacote baixado tem o hash conferido antes de ser usado.
 4. Antes de mudar qualquer arquivo de outro programa, o Terminal-Design faz backup. Se o arquivo estiver com erro, ele não mexe.
 5. O código não tem dependências de terceiros em tempo de execução.
@@ -390,9 +352,6 @@ Rode `td claude status`. Se aparecer como não instalada, rode `td claude instal
 **Os limites de 5 horas e de 7 dias não aparecem.**
 Eles só existem para os planos Pro, Max e Ultra, e chegam depois da primeira resposta da sessão.
 
-**A voz não digita em um programa.**
-Programas abertos como administrador não aceitam digitação de programas comuns. O td voice percebe isso, não digita e deixa o texto pronto para copiar. Para digitar direto, abra o `td voice` também como administrador, ou abra o programa sem ser administrador.
-
 **Quero voltar para a versão anterior.**
 Rode `td update --rollback`.
 
@@ -400,7 +359,6 @@ Rode `td update --rollback`.
 
 ```
 apps/terminal-cockpit   status line e painel de agentes
-apps/voice-engine       digitação por voz
 packages/core           base comum: caminhos, arquivos, versões, cores
 packages/config         configuração central
 packages/themes         motor de temas
@@ -421,7 +379,6 @@ Documentação técnica:
 - [Configuração](docs/configuration.md)
 - [Temas](docs/themes.md)
 - [Claude Code](docs/claude-code.md)
-- [Voz](docs/voice.md)
 
 ## Como contribuir
 
