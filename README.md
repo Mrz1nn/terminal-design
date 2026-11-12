@@ -162,7 +162,7 @@ A status line aparece na próxima mensagem que você mandar no Claude Code.
 
 Você não precisa reinstalar nada para receber versões novas.
 
-**Como você fica sabendo:** uma vez por dia, em segundo plano, o Terminal-Design consulta as releases públicas deste repositório. A consulta é anônima, sem token e sem dados pessoais. Quando existe uma versão mais nova, aparece um botão na status line do Claude Code e no painel `td`:
+**Como você fica sabendo:** uma vez por hora, em segundo plano, o Terminal-Design consulta as releases públicas deste repositório. A consulta é anônima, sem token e sem dados pessoais. Quando existe uma versão mais nova, aparece um botão na status line do Claude Code e no painel `td`:
 
 ```
 [ ↑ atualizar para 0.2.0 ] td update
@@ -327,7 +327,7 @@ A desinstalação faz o seguinte:
 
 1. Não há telemetria.
 2. A internet só é usada para:
-   - a consulta diária de versão nova, que pode ser desligada;
+   - a consulta de versão nova (no máximo uma por hora), que pode ser desligada;
    - o `td update`, que sempre pede confirmação.
 3. Todo pacote baixado tem o hash conferido antes de ser usado.
 4. Antes de mudar qualquer arquivo de outro programa, o Terminal-Design faz backup. Se o arquivo estiver com erro, ele não mexe.

@@ -29,7 +29,7 @@ Se o arquivo tiver um valor inválido, o td usa o padrão daquela chave e avisa 
 | `cockpit.locale` | `pt-BR` | `pt-BR`, `en` |
 | `cockpit.git.enabled` / `cacheMs` | `true` / `3000` | |
 | `update.auto` | `notify` | `off` (nunca checa sozinho) ou `notify` (só avisa) |
-| `update.checkIntervalHours` | `24` | |
+| `update.checkIntervalHours` | `1` | |
 | `update.channel` | `stable` | `stable`, `prerelease` |
 | `update.repository` | `null` | `dono/repo` (para forks). `null` usa o do package.json |
 | `telemetry` | `false` | O td não tem telemetria. A chave existe só para deixar isso explícito. |

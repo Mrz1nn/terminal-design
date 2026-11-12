@@ -19,7 +19,7 @@ No `config.json` (`td config set <chave> <valor>`):
 | Chave | Valores | Padrão | O que faz |
 |---|---|---|---|
 | `update.auto` | `notify`, `off` | `notify` | `notify` mostra um aviso no painel quando há versão nova. `off` desliga até a verificação em segundo plano. |
-| `update.checkIntervalHours` | número | `24` | De quanto em quanto tempo verificar. |
+| `update.checkIntervalHours` | número | `1` | De quanto em quanto tempo verificar. |
 | `update.channel` | `stable`, `prerelease` | `stable` | `prerelease` também considera versões de teste (`1.2.0-beta.1`). |
 | `update.repository` | `dono/repo` ou `null` | `null` | Repositório de onde vêm as atualizações. `null` usa o do `package.json`. |
 

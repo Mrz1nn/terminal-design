@@ -11,6 +11,9 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 - `td theme list` numera os temas, e `td theme set` e `td theme preview` aceitam o número.
 - `td claude status` mostra se o `/tema` está instalado.
 
+### Alterado
+- A verificação de versão nova agora roda a cada hora, e não mais uma vez por dia: uma versão lançada aparece na status line em até cerca de uma hora. Continua anônima e em segundo plano (`update.checkIntervalHours`).
+
 ## [0.3.0] - 2026-11-12
 
 ### Removido

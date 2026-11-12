@@ -35,7 +35,9 @@ export const DEFAULTS = Object.freeze({
     // Never installs on its own. "notify" only shows that a new version exists.
     // off | notify
     auto: 'notify',
-    checkIntervalHours: 24,
+    // One anonymous GitHub API call per hour at most (limit is 60/hour per IP), so a new
+    // release shows up within about an hour.
+    checkIntervalHours: 1,
     channel: 'stable', // stable | prerelease
     repository: null, // null = value from package.json "terminalDesign.repository"
   },

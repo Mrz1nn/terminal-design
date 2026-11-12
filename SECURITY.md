@@ -8,7 +8,7 @@ Não abra uma issue pública para vulnerabilidades. Use o recurso **Security > R
 
 | Área | Garantia |
 |---|---|
-| Rede | Downloads só acontecem em `td update` (GitHub), sempre a pedido e com confirmação. A status line nunca espera a rede: ela só lê um cache local. Com `update.auto: notify` (o padrão), quando esse cache passa de `update.checkIntervalHours` (24 h), um processo em segundo plano faz uma única consulta anônima à API pública de releases do GitHub, sem token e sem dados pessoais, e só registra se existe versão nova. Para desligar: `td config set update.auto off` ou a variável `TD_NO_UPDATE_CHECK=1`. |
+| Rede | Downloads só acontecem em `td update` (GitHub), sempre a pedido e com confirmação. A status line nunca espera a rede: ela só lê um cache local. Com `update.auto: notify` (o padrão), quando esse cache passa de `update.checkIntervalHours` (1 h), um processo em segundo plano faz uma única consulta anônima à API pública de releases do GitHub, sem token e sem dados pessoais, e só registra se existe versão nova. Para desligar: `td config set update.auto off` ou a variável `TD_NO_UPDATE_CHECK=1`. |
 | Atualizações | O zip só é aceito se o SHA-256 bater com o `SHA256SUMS.txt` da release. Nenhum script do pacote é executado antes da verificação, e não há atualização silenciosa. |
 | Áudio | É gravado em um WAV temporário local, transcrito localmente e apagado em seguida. Nada é enviado para fora. |
 | Credenciais | Nenhuma fica no repositório (o `npm run lint` procura padrões de token). O `GITHUB_TOKEN` é opcional e só é lido do ambiente. |
