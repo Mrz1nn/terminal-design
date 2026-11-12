@@ -34,6 +34,15 @@ O que ele garante:
 - Pergunta antes de substituir uma status line de terceiros.
 - Usa `refreshInterval: 30` para que a contagem até a renovação dos limites e o git continuem atualizados mesmo sem mensagens novas.
 
+## Comando `/tema`
+
+O `td claude install` também cria `~/.claude/commands/tema.md`. No Claude Code:
+
+- `/tema` mostra os temas numerados, com o atual marcado;
+- `/tema nord` ou `/tema 6` aplica o tema. A status line muda na próxima mensagem.
+
+O arquivo leva o marcador `<!-- terminal-design:command`. Um `tema.md` seu, sem esse marcador, nunca é alterado nem apagado. Quem já tinha a status line instalada recebe o `/tema` sozinho, uma única vez, na primeira vez que a status line roda depois de atualizar. Se você apagar o arquivo, ele não volta. O `td claude uninstall` remove só o arquivo com o marcador.
+
 ## Layouts
 
 ```powershell

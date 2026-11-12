@@ -38,6 +38,94 @@ export function statusCommand(paths, sub = false, platform = process.platform) {
   return `node "${fwd(path.join(paths.appRoot, 'bin', 'td.js'))}" ${tail}`;
 }
 
+// ---- slash commands (/tema) -------------------------------------------------------
+// Files in ~/.claude/commands written by Terminal-Design carry COMMAND_MARK. A file with the
+// same name but without the mark belongs to the user and is never touched.
+export const COMMAND_MARK = '<!-- terminal-design:command';
+/** Bump when the command text changes: existing installs pick up the new text once. */
+export const COMMANDS_VERSION = 1;
+
+/** How Claude Code should run td: same program as the status line, without the statusline tail. */
+export function tdCommand(paths, platform = process.platform) {
+  return statusCommand(paths, false, platform).replace(/ statusline --from=terminal-design$/, '');
+}
+
+export function commandsDir(paths) {
+  return path.join(paths.claudeHome, 'commands');
+}
+
+function commandsRecord(paths) {
+  return path.join(paths.dataHome, 'claude-commands.json');
+}
+
+/** Pure: file name -> content of every slash command we ship. */
+export function commandFiles(paths, platform = process.platform) {
+  const td = tdCommand(paths, platform);
+  return {
+    'tema.md': [
+      '---',
+      'description: Troca o tema do Terminal-Design (status line do Claude Code)',
+      'argument-hint: "[nome ou número do tema]"',
+      '---',
+      `${COMMAND_MARK} v${COMMANDS_VERSION}: criado por td claude install; td claude uninstall remove. -->`,
+      '',
+      'Tema do Terminal-Design. Argumento recebido: "$ARGUMENTS".',
+      '',
+      `- Sem argumento: rode \`${td} theme list --no-color\` e mostre a lista numerada exatamente como veio, com o tema atual marcado. Depois pergunte qual tema a pessoa quer (nome ou número). Não aplique nada sozinho.`,
+      `- Com argumento: rode \`${td} theme set $ARGUMENTS --no-color\`. Se der certo, responda em uma linha que o tema foi aplicado e que a status line muda na próxima mensagem. Se der erro, mostre o erro e a lista de temas.`,
+      `- Para ver um tema antes de aplicar, a pessoa pode pedir uma prévia: \`${td} theme preview <nome ou número>\`.`,
+      '',
+      'Não rode nenhum outro comando nem mude outros arquivos.',
+      '',
+    ].join('\n'),
+  };
+}
+
+function isOurCommandFile(file) {
+  try { return fs.readFileSync(file, 'utf8').includes(COMMAND_MARK); } catch { return false; }
+}
+
+/** Write our slash commands. Returns { written: [], skipped: [] } (skipped = user's own file with the same name). */
+export function installCommands(paths, platform = process.platform) {
+  const dir = commandsDir(paths);
+  const written = [];
+  const skipped = [];
+  for (const [name, content] of Object.entries(commandFiles(paths, platform))) {
+    const file = path.join(dir, name);
+    if (fs.existsSync(file) && !isOurCommandFile(file)) { skipped.push(file); continue; }
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(file, content);
+    written.push(file);
+  }
+  writeJsonAtomic(commandsRecord(paths), { version: COMMANDS_VERSION, files: written, at: new Date().toISOString() });
+  return { written, skipped };
+}
+
+/** Remove only our own command files. */
+export function removeCommands(paths) {
+  const removed = [];
+  for (const name of Object.keys(commandFiles(paths))) {
+    const file = path.join(commandsDir(paths), name);
+    if (fs.existsSync(file) && isOurCommandFile(file)) { fs.rmSync(file, { force: true }); removed.push(file); }
+  }
+  fs.rmSync(commandsRecord(paths), { force: true });
+  return { removed };
+}
+
+/**
+ * Called by the status line (cheap: one small file read). Installs or refreshes our commands once
+ * per COMMANDS_VERSION when our status line is active, so `td update` users get /tema without
+ * running anything. A command the user deleted is not recreated until COMMANDS_VERSION changes.
+ */
+export function ensureCommands(paths) {
+  const rec = readJson(commandsRecord(paths), null);
+  if (rec && rec.version === COMMANDS_VERSION) return false;
+  const st = status(paths);
+  if (st.error || !st.installed) return false;
+  installCommands(paths);
+  return true;
+}
+
 export function isOurs(entry) {
   return !!entry && typeof entry.command === 'string' && entry.command.includes(`--from=${MARKER}`);
 }
@@ -83,12 +171,16 @@ export function install(paths, { subagent = true, refreshInterval = 30 } = {}) {
   settings.statusLine = { type: 'command', command: statusCommand(paths), refreshInterval };
   if (subagent) settings.subagentStatusLine = { type: 'command', command: statusCommand(paths, true) };
   writeJsonAtomic(file, settings);
-  return { file, backup };
+  let commands = { written: [], skipped: [] };
+  try { commands = installCommands(paths); } catch { /* the status line works without /tema */ }
+  return { file, backup, commands };
 }
 
 export function uninstall(paths) {
   const file = settingsFile(paths);
-  if (!fs.existsSync(file)) return { file, changed: false };
+  let commands = { removed: [] };
+  try { commands = removeCommands(paths); } catch { /* keep going */ }
+  if (!fs.existsSync(file)) return { file, changed: commands.removed.length > 0, commands };
   const settings = readJsonForUpdate(file, {});
   const saved = readJson(previousFile(paths), null);
   const prev = isPlainObject(saved) ? saved : { statusLine: null, subagentStatusLine: null };
@@ -106,5 +198,5 @@ export function uninstall(paths) {
     writeJsonAtomic(file, settings);
   }
   fs.rmSync(previousFile(paths), { force: true });
-  return { file, changed, backup, restored: changed && !!(prev.statusLine || prev.subagentStatusLine) };
+  return { file, changed: changed || commands.removed.length > 0, backup, commands, restored: changed && !!(prev.statusLine || prev.subagentStatusLine) };
 }

@@ -104,3 +104,49 @@ test('Windows Terminal fragment contains every theme', () => {
   wt.removeSchemes(env);
   assert.equal(fs.existsSync(r.file), false);
 });
+
+// ---- /tema slash command ------------------------------------------------------
+
+test('install writes /tema with our mark and the same td program as the status line; uninstall removes it', () => {
+  isolate();
+  const paths = getPaths();
+  const r = cc.install(paths);
+  const file = path.join(cc.commandsDir(paths), 'tema.md');
+  assert.deepEqual(r.commands.written, [file]);
+  const text = fs.readFileSync(file, 'utf8');
+  assert.ok(text.includes(cc.COMMAND_MARK));
+  assert.ok(text.includes(`${cc.tdCommand(paths)} theme list --no-color`));
+  assert.ok(text.includes(`${cc.tdCommand(paths)} theme set $ARGUMENTS --no-color`));
+  assert.match(text, /^---\ndescription: /);
+  assert.equal(cc.tdCommand(paths, 'win32'), cc.statusCommand(paths, false, 'win32').replace(' statusline --from=terminal-design', ''));
+  const u = cc.uninstall(paths);
+  assert.deepEqual(u.commands.removed, [file]);
+  assert.equal(fs.existsSync(file), false);
+});
+
+test("a user's own tema.md is never overwritten nor removed", () => {
+  isolate();
+  const paths = getPaths();
+  const file = path.join(cc.commandsDir(paths), 'tema.md');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, 'meu comando');
+  const r = cc.install(paths);
+  assert.deepEqual(r.commands.skipped, [file]);
+  cc.uninstall(paths);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'meu comando');
+});
+
+test('ensureCommands (status line): adds /tema once for existing installs, respects a deletion, needs our status line', () => {
+  isolate();
+  const paths = getPaths();
+  const file = path.join(cc.commandsDir(paths), 'tema.md');
+  assert.equal(cc.ensureCommands(paths), false, 'no status line of ours: nothing');
+  cc.install(paths);
+  // Simulate an install made before /tema existed: no command, no record.
+  cc.removeCommands(paths);
+  assert.equal(cc.ensureCommands(paths), true);
+  assert.ok(fs.existsSync(file));
+  fs.rmSync(file);
+  assert.equal(cc.ensureCommands(paths), false, 'already done for this version');
+  assert.equal(fs.existsSync(file), false, 'user deletion respected');
+});

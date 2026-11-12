@@ -264,8 +264,11 @@ Os itens sem dado somem. Para ver `n/d` no lugar deles: `td config set cockpit.s
 Temas prontos: Midnight (padrão), Dracula, Nord, Tokyo Night, Catppuccin, Gruvbox, One Dark, Monokai, Solarized e Terminal Classic.
 
 ```powershell
-td theme set tokyo-night
+td theme list             # lista numerada
+td theme set tokyo-night  # ou pelo número: td theme set 10
 ```
+
+**Dentro do Claude Code**, sem sair da conversa: digite `/tema` para ver a lista numerada e `/tema nord` (ou `/tema 6`) para aplicar. A status line muda na próxima mensagem. O comando `/tema` é instalado junto com a status line pelo `td claude install` e removido pelo `td claude uninstall`.
 
 Para mudar só algumas cores sem criar um tema:
 

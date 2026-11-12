@@ -4,6 +4,13 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 ## [Não lançado]
 
+## [0.3.1] - 2026-11-12
+
+### Adicionado
+- Comando `/tema` no Claude Code: `/tema` lista os temas numerados e `/tema nord` ou `/tema 6` aplica, sem sair da conversa. É instalado pelo `td claude install`, chega sozinho para quem já tinha a status line e sai no `td claude uninstall`. Um `tema.md` seu nunca é alterado.
+- `td theme list` numera os temas, e `td theme set` e `td theme preview` aceitam o número.
+- `td claude status` mostra se o `/tema` está instalado.
+
 ## [0.3.0] - 2026-11-12
 
 ### Removido

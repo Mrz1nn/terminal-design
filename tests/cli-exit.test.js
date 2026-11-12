@@ -93,3 +93,19 @@ test('every unknown-subcommand path in the source uses the shared usage error', 
     assert.doesNotMatch(src, /return 2;/, `${f}: use UsageError instead of a bare 2`);
   }
 });
+
+test('td theme: numbered list without a terminal, set and preview by number', () => {
+  const list = td('theme', 'list');
+  assert.equal(list.code, 0);
+  assert.match(list.out, /^\s+1\s+catppuccin/m);
+  assert.match(list.out, /^\s+6\s+nord/m);
+  const set = td('theme', 'set', '6');
+  assert.equal(set.code, 0, set.err);
+  assert.match(set.out, /Tema nord aplicado/);
+  assert.match(td('config', 'get', 'theme.name').out, /"nord"/);
+  assert.equal(td('theme', 'preview', '1').code, 0);
+  const bad = td('theme', 'set', '99');
+  assert.equal(bad.code, 2);
+  assert.match(bad.err, /não existe tema número 99/);
+  td('theme', 'set', 'midnight');
+});

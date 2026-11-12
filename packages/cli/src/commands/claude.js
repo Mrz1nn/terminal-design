@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import * as cc from '../../../../integrations/claude-code/index.js';
 import { unknownSubcommand } from '../errors.js';
@@ -36,6 +38,7 @@ export default {
         ['settings', st.settingsFile],
         ['status line', st.installed ? ui.c.success('Terminal-Design') : st.statusLine ? ui.c.warning('outra (de terceiros)') : ui.c.muted('nenhuma')],
         ['painel de agentes', st.subagentInstalled ? ui.c.success('Terminal-Design') : st.subagentStatusLine ? ui.c.warning('outro') : ui.c.muted('padrão')],
+        ['comando /tema', fs.existsSync(path.join(cc.commandsDir(paths), 'tema.md')) ? ui.c.success('instalado') : ui.c.muted('não instalado')],
       ]);
       return;
     }
@@ -48,6 +51,8 @@ export default {
       const r = cc.install(paths, { subagent: flags.subagent !== false });
       ui.ok('Status line do Terminal-Design instalada no Claude Code.');
       if (r.backup) ui.print(`  ${ui.c.muted(`backup: ${r.backup}`)}`);
+      if (r.commands?.written.length) ui.ok('Comando /tema instalado: no Claude Code, digite /tema para trocar o tema.');
+      for (const f of r.commands?.skipped ?? []) ui.warn(`${f} já existe e não é do Terminal-Design; não foi alterado (o /tema fica sem instalar).`);
       ui.print(`  ${ui.c.muted('Aparece na próxima mensagem do Claude Code (ou reabra a sessão).')}`);
       return;
     }

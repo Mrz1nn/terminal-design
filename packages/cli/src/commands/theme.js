@@ -44,17 +44,30 @@ async function pick(ctx) {
 function listCmd(ctx) {
   const { ui } = ctx;
   ui.title('Temas disponíveis');
+  // Valid themes are numbered in the same order as the interactive picker; `td theme set <n>` uses it.
+  let n = 0;
   for (const t of listThemes(ctx.paths)) {
     const cur = t.name === ctx.config.theme.name ? ui.c.success(' ● atual') : '';
     const origin = t.origin === 'user' ? ui.c.muted(' [usuário]') : '';
     const bad = t.errors.length ? ui.c.error(` inválido: ${t.errors[0]}`) : '';
-    ui.print(`  ${t.errors.length ? '   ' : swatches(t.theme, ui.mode).padEnd(0)}  ${ui.c.bold(t.name.padEnd(17))} ${ui.c.muted(t.displayName ?? '')}${origin}${cur}${bad}`);
+    const num = t.errors.length ? '   ' : ui.c.accent(String(++n).padStart(2) + ' ');
+    ui.print(`  ${num} ${t.errors.length ? '' : swatches(t.theme, ui.mode)}  ${ui.c.bold(t.name.padEnd(17))} ${ui.c.muted(t.displayName ?? '')}${origin}${cur}${bad}`);
   }
-  ui.print(`\n  ${ui.c.muted('Aplicar:')} ${ui.c.accent('td theme set <nome>')}   ${ui.c.muted('Ver:')} ${ui.c.accent('td theme preview <nome>')}`);
+  ui.print(`\n  ${ui.c.muted('Aplicar:')} ${ui.c.accent('td theme set <nome ou número>')}   ${ui.c.muted('Ver:')} ${ui.c.accent('td theme preview <nome>')}`);
 }
 
-function setTheme(name, flags, ctx) {
+/** "6" -> the 6th valid theme (same numbering as the list); anything else is a theme name. */
+export function resolveThemeArg(arg, paths) {
+  if (!/^\d+$/.test(String(arg))) return arg;
+  const valid = listThemes(paths).filter((t) => !t.errors.length);
+  const t = valid[Number(arg) - 1];
+  if (!t) throw new UsageError(`não existe tema número ${arg} (use 1 a ${valid.length}; veja td theme list)`);
+  return t.name;
+}
+
+function setTheme(nameOrNumber, flags, ctx) {
   const { ui } = ctx;
+  const name = resolveThemeArg(nameOrNumber, ctx.paths);
   loadTheme(name, ctx.paths); // throws with a clear message if missing/invalid
   setConfigValue('theme.name', name, ctx.paths);
   ui.ok(`Tema ${ui.c.bold(name)} aplicado. A status line do Claude Code muda na próxima atualização.`);
@@ -73,7 +86,7 @@ export default {
   usage: [
     'td theme                      seleção interativa',
     'td theme list                 lista os temas',
-    'td theme set <nome> [--wt]    aplica (e, com --wt, envia ao Windows Terminal)',
+    'td theme set <nome|número> [--wt]  aplica (e, com --wt, envia ao Windows Terminal)',
     'td theme preview <nome>       mostra a status line com o tema',
     'td theme import <arquivo>     instala um tema .json [--force]',
     'td theme export <nome> <arq>  exporta (com personalizações) [--as <novo-nome>]',
@@ -92,10 +105,10 @@ export default {
         return listCmd(ctx);
       case 'set':
       case 'use':
-        if (!a) throw new UsageError('informe o nome: td theme set <nome>');
+        if (!a) throw new UsageError('informe o nome ou o número: td theme set <nome|número>');
         return setTheme(a, flags, ctx);
       case 'preview':
-        ui.print(preview(a ?? ctx.config.theme.name, ctx));
+        ui.print(preview(a ? resolveThemeArg(a, ctx.paths) : ctx.config.theme.name, ctx));
         return;
       case 'import': {
         if (!a) throw new UsageError('informe o arquivo: td theme import <arquivo.json>');
