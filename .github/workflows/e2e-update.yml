@@ -1,0 +1,135 @@
+# Actions used: actions/checkout (MIT), actions/setup-node (MIT). Both maintained by GitHub.
+#
+# End-to-end test of what a user experiences, against the REAL public releases:
+#   1. install an older release with its own one-line installer (real download + SHA-256),
+#   2. the status line starts the background check and then shows "[ ↑ atualizar para X ]",
+#   3. td update moves to the latest release, the button disappears,
+#   4. rollback and update again, themes, doctor, uninstall.
+# Everything happens in a throwaway HOME / data folder on the runner.
+name: E2E update
+
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: 'Versão antiga para instalar primeiro'
+        default: '0.2.2'
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, macos-15-intel, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      FROM: ${{ inputs.from || '0.2.2' }}
+      REPO: Mrz1nn/terminal-design
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Latest release
+        shell: bash
+        run: |
+          LATEST=$(curl -fsSL -H "Authorization: Bearer ${{ github.token }}" "https://api.github.com/repos/$REPO/releases/latest" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).tag_name.replace(/^v/,'')")
+          echo "LATEST=$LATEST" >> "$GITHUB_ENV"
+          echo "from $FROM to $LATEST"
+          test "$FROM" != "$LATEST"
+
+      - name: macOS / Linux
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/home"
+          mkdir -p "$HOME" && touch "$HOME/.zshrc" "$HOME/.bash_profile"
+          export CLAUDE_CONFIG_DIR="$HOME/.claude"
+          unset TD_DATA_HOME TD_CONFIG_HOME
+          SAMPLE="$GITHUB_WORKSPACE/tests/fixtures/statusline-sample.json"
+
+          echo "::group::install $FROM with its own get.sh"
+          curl -fsSL "https://raw.githubusercontent.com/$REPO/v$FROM/scripts/get.sh" \
+            | TD_RELEASE_BASE_URL="https://github.com/$REPO/releases/download/v$FROM" sh
+          echo "::endgroup::"
+          TD="$HOME/.local/share/terminal-design/bin/td"
+          "$TD" version | tee /dev/stderr | grep -q "$FROM"
+          CMD=$(node -e "console.log(require(process.env.CLAUDE_CONFIG_DIR + '/settings.json').statusLine.command)")
+          sl() { env -i HOME="$HOME" PATH=/usr/bin:/bin sh -c "$CMD" < "$SAMPLE"; }
+
+          echo "::group::status line starts the background check"
+          sl > /dev/null
+          CACHE="$HOME/.local/share/terminal-design/cache/update-check.json"
+          for i in $(seq 1 60); do [ -s "$CACHE" ] && break; sleep 1; done
+          cat "$CACHE"; echo
+          echo "::endgroup::"
+          OUT=$(sl); echo "$OUT"
+          echo "$OUT" | grep -q "atualizar para $LATEST" || { echo "::error::aviso de atualização não apareceu"; exit 1; }
+
+          "$TD" update --yes
+          "$TD" version | grep -q "$LATEST"
+          OUT=$(sl); echo "$OUT"
+          echo "$OUT" | grep -q "Opus 5.5"
+          ! echo "$OUT" | grep -q "atualizar para"
+
+          "$TD" update --rollback --yes
+          "$TD" version | grep -q "$FROM"
+          "$TD" update --yes
+          "$TD" version | grep -q "$LATEST"
+
+          "$TD" theme set nord --no-color
+          sl | grep -q "Opus 5.5"
+          "$TD" doctor --no-color || true
+          "$TD" uninstall --yes
+          ! grep -q "terminal-design" "$HOME/.zshrc"
+
+      - name: Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = "$env:RUNNER_TEMP\e2e"
+          $env:TD_DATA_HOME = "$root\data"
+          $env:TD_CONFIG_HOME = "$root\config"
+          $env:CLAUDE_CONFIG_DIR = "$root\claude"
+          $env:TD_NO_PATH = '1'
+          $env:TD_NO_VOICE = '1'   # 0.2.x installers downloaded voice by default
+          $sample = "$env:GITHUB_WORKSPACE\tests\fixtures\statusline-sample.json"
+          function Check($ok, $msg) { if (-not $ok) { Write-Host "::error::$msg"; exit 1 } }
+
+          $env:TD_RELEASE_BASE_URL = "https://github.com/$env:REPO/releases/download/v$env:FROM"
+          irm "https://raw.githubusercontent.com/$env:REPO/v$env:FROM/scripts/get.ps1" | iex
+          Remove-Item Env:TD_RELEASE_BASE_URL
+          $td = "$env:TD_DATA_HOME\bin\td.cmd"
+          $v = & $td version; Write-Host $v; Check ($v -match [regex]::Escape($env:FROM)) "versão instalada errada"
+          $cmd = (Get-Content "$env:CLAUDE_CONFIG_DIR\settings.json" -Raw | ConvertFrom-Json).statusLine.command
+          Write-Host "status line: $cmd"
+          function SL { cmd /d /c "$cmd < `"$sample`"" | Out-String }
+
+          $null = SL
+          $cache = "$env:TD_DATA_HOME\cache\update-check.json"
+          for ($i = 0; $i -lt 60 -and -not (Test-Path $cache); $i++) { Start-Sleep 1 }
+          Get-Content $cache -Raw
+          $out = SL; Write-Host $out
+          Check ($out -match "atualizar para $([regex]::Escape($env:LATEST))") 'aviso de atualização não apareceu'
+
+          & $td update --yes; Check ($LASTEXITCODE -eq 0) 'td update falhou'
+          $v = & $td version; Check ($v -match [regex]::Escape($env:LATEST)) 'não atualizou'
+          $out = SL; Write-Host $out
+          Check ($out -match 'Opus 5.5') 'status line quebrou depois do update'
+          Check ($out -notmatch 'atualizar para') 'aviso continuou depois do update'
+
+          & $td update --rollback --yes; $v = & $td version; Check ($v -match [regex]::Escape($env:FROM)) 'rollback falhou'
+          & $td update --yes; $v = & $td version; Check ($v -match [regex]::Escape($env:LATEST)) 'segundo update falhou'
+
+          & $td theme set nord --no-color; Check ($LASTEXITCODE -eq 0) 'theme set falhou'
+          Check ((SL) -match 'Opus 5.5') 'status line com tema falhou'
+          & $td doctor --no-color
+          & $td uninstall --yes; Check ($LASTEXITCODE -eq 0) 'uninstall falhou'
