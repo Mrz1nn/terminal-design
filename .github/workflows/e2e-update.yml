@@ -69,6 +69,11 @@ jobs:
           CACHE="$HOME/.local/share/terminal-design/cache/update-check.json"
           # The file appears at once (lastAttemptAt); the background check adds checkedAt when GitHub answers.
           for i in $(seq 1 90); do grep -q checkedAt "$CACHE" 2>/dev/null && break; sleep 1; done
+          if grep -q rate-limit "$CACHE" 2>/dev/null; then
+            # Shared CI IPs hit GitHub's anonymous limit; users check from their own IP. Refresh with a token.
+            echo "background check hit the anonymous rate limit on this runner; refreshing with td update --check"
+            GITHUB_TOKEN="${{ github.token }}" "$TD" update --check
+          fi
           ls -la "$HOME/.local/share/terminal-design/cache" || true
           cat "$HOME/.config/terminal-design/config.json" || true
           env | grep -E '^(TD_|CI=|GITHUB_ACTIONS)' || true
@@ -117,14 +122,20 @@ jobs:
           $v = & $td version; Write-Host $v; Check ($v -match [regex]::Escape($env:FROM)) "versão instalada errada"
           $cmd = (Get-Content "$env:CLAUDE_CONFIG_DIR\settings.json" -Raw | ConvertFrom-Json).statusLine.command
           Write-Host "status line: $cmd"
-          # Run the exact command line from settings.json through cmd.exe, stdin from the sample payload.
-          $bat = "$root\statusline.cmd"
-          [IO.File]::WriteAllText($bat, "@echo off`r`n$cmd < `"$sample`"`r`n")
-          function SL { & cmd.exe /d /c $bat 2>&1 | Out-String }
+          # The command is: node "<dataHome>/launcher.js" statusline --from=terminal-design
+          Check ($cmd -match '^node "([^"]+)" (.+)$') "comando da status line inesperado: $cmd"
+          $launcher = $Matches[1]; $slArgs = $Matches[2] -split ' '
+          $json = [IO.File]::ReadAllText($sample)
+          function SL { $o = $json | & node $launcher @slArgs 2>&1 | Out-String; Write-Host "(status line exit $LASTEXITCODE)"; $o }
 
           SL | Write-Host
           $cache = "$env:TD_DATA_HOME\cache\update-check.json"
           for ($i = 0; $i -lt 90 -and -not ((Test-Path $cache) -and (Select-String -Path $cache -Pattern checkedAt -Quiet)); $i++) { Start-Sleep 1 }
+          if ((Test-Path $cache) -and (Select-String -Path $cache -Pattern 'rate-limit' -Quiet)) {
+            # Shared CI IPs hit GitHub's anonymous limit; users check from their own IP. Refresh with a token.
+            Write-Host 'background check hit the anonymous rate limit on this runner; refreshing with td update --check'
+            $env:GITHUB_TOKEN = '${{ github.token }}'; & $td update --check; Remove-Item Env:GITHUB_TOKEN
+          }
           Get-ChildItem "$env:TD_DATA_HOME\cache" -ErrorAction SilentlyContinue | Format-Table Name, Length | Out-String | Write-Host
           Get-Content "$env:TD_CONFIG_HOME\config.json" -Raw -ErrorAction SilentlyContinue | Write-Host
           Get-ChildItem Env: | Where-Object Name -match '^(TD_|CI$)' | Format-Table Name, Value | Out-String | Write-Host
