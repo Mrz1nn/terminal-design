@@ -51,7 +51,12 @@ function Install-TerminalDesign {
 
   function Get-Resource([string]$src, [string]$dest) {
     if ($src -match '^https://') {
-      Invoke-WebRequest -Uri $src -OutFile $dest -UseBasicParsing -MaximumRedirection 10 -TimeoutSec 300
+      # .NET WebClient instead of Invoke-WebRequest: no module autoload (works when Windows PowerShell
+      # is started from PowerShell 7) and TLS 1.2 forced, which GitHub requires on older Windows 10.
+      [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+      $wc = New-Object System.Net.WebClient
+      $wc.Headers['User-Agent'] = 'terminal-design-installer'
+      try { $wc.DownloadFile($src, $dest) } finally { $wc.Dispose() }
     } elseif ($src -match '^http://') {
       Fail "recusado: só HTTPS é permitido ($src)"
     } else {
@@ -61,13 +66,22 @@ function Install-TerminalDesign {
     }
   }
 
+  # .NET ZipFile instead of Expand-Archive (no module autoload). It refuses entries that would
+  # land outside the destination folder (zip-slip).
+  function Expand-Zip([string]$zip, [string]$dest) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $dest)
+  }
+
   function Join-Src([string]$base, [string]$name) {
     if ($base -match '^(https?|file)://') { return "$base/$name" }
     return (Join-Path $base $name)
   }
 
   function Assert-Hash([string]$file, [string]$expected) {
-    $actual = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $fs = [System.IO.File]::OpenRead($file)
+    try { $actual = -join ($sha.ComputeHash($fs) | ForEach-Object { $_.ToString('x2') }) } finally { $fs.Dispose(); $sha.Dispose() }
     if ($actual -ne $expected.ToLowerInvariant()) {
       Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
       Fail "SHA-256 não confere para $(Split-Path -Leaf $file); download recusado"
@@ -115,7 +129,7 @@ function Install-TerminalDesign {
     Assert-Hash $zip $hash
     Step "$file conferido (SHA-256)"
     $x = Join-Path $tmp 'node-x'
-    Expand-Archive -LiteralPath $zip -DestinationPath $x -Force
+    Expand-Zip $zip $x
     $src = Join-Path $x ($file -replace '\.zip$', '')
     if (-not (Test-Path -LiteralPath (Join-Path $src 'node.exe'))) { Fail 'o pacote do Node.js não tem node.exe' }
     $dest = Join-Path $dataHome 'node'
@@ -175,9 +189,8 @@ function Install-TerminalDesign {
     Assert-Hash $zip $zipHash
     Step "$zipName baixado e conferido (SHA-256)"
 
-    # Expand-Archive (.NET ZipFile) refuses entries that would land outside the folder.
     $x = Join-Path $tmp 'release'
-    Expand-Archive -LiteralPath $zip -DestinationPath $x -Force
+    Expand-Zip $zip $x
     $root = Get-ChildItem -LiteralPath $x -Directory | Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'scripts\install.ps1') } | Select-Object -First 1
     if ($root) { $root = $root.FullName } elseif (Test-Path -LiteralPath (Join-Path $x 'scripts\install.ps1')) { $root = $x } else { Fail 'o pacote baixado não tem scripts\install.ps1' }
 
@@ -187,7 +200,11 @@ function Install-TerminalDesign {
     if (-not $NoClaude) { $installArgs += '-ClaudeCode' }
     if ($NoPath) { $installArgs += '-NoPath' }
     if ($Theme) { $installArgs += @('-Theme', $Theme) }
-    & powershell.exe @installArgs
+    # A Windows PowerShell child started from PowerShell 7 inherits PowerShell 7 module paths and then
+    # cannot load its own cmdlets. Give the child the default Windows PowerShell module path.
+    $savedModulePath = $env:PSModulePath
+    $env:PSModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Machine')
+    try { & powershell.exe @installArgs } finally { $env:PSModulePath = $savedModulePath }
     if ($LASTEXITCODE -ne 0) { Fail 'o instalador terminou com erro (veja acima)' }
 
     $launcher = Join-Path $dataHome 'launcher.js'

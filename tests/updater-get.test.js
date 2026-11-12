@@ -40,7 +40,7 @@ before(() => {
 function sandbox() {
   const base = tmp();
   const env = { ...process.env };
-  for (const k of Object.keys(env)) if (/^(TD_|CLAUDE_CONFIG_DIR$)/.test(k)) delete env[k];
+  for (const k of Object.keys(env)) if (/^(TD_|CLAUDE_CONFIG_DIR$|PSModulePath$)/i.test(k)) delete env[k];
   Object.assign(env, {
     HOME: path.join(base, 'home'),
     TD_DATA_HOME: path.join(base, 'data'),
@@ -112,7 +112,15 @@ describe('get.sh with local overrides', { skip: !SH }, () => {
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, /conferido \(SHA-256\)/);
     assert.match(r.stdout, /Terminal-Design instalado/);
-    const cur = JSON.parse(fs.readFileSync(path.join(env.TD_DATA_HOME, 'current.json'), 'utf8'));
+    const curFile = path.join(env.TD_DATA_HOME, 'current.json');
+    assert.ok(fs.existsSync(curFile), `current.json ausente em ${env.TD_DATA_HOME}
+conteúdo: ${fs.existsSync(env.TD_DATA_HOME) ? fs.readdirSync(env.TD_DATA_HOME).join(', ') : '(pasta não existe)'}
+HOME: ${JSON.stringify(fs.readdirSync(env.HOME))}
+--- stdout ---
+${r.stdout}
+--- stderr ---
+${r.stderr}`);
+    const cur = JSON.parse(fs.readFileSync(curFile, 'utf8'));
     assert.equal(cur.version, version);
     assert.ok(fs.existsSync(path.join(env.CLAUDE_CONFIG_DIR, 'settings.json')), 'claude install ran');
     assert.equal(fs.existsSync(path.join(env.HOME, '.zshrc')), false, 'TD_NO_PATH respected');

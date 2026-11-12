@@ -20,6 +20,7 @@ function runCsharpTests() {
   ].join('; ');
   const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
     encoding: 'utf8', windowsHide: true, timeout: 120000,
+    env: Object.fromEntries(Object.entries(process.env).filter(([k]) => k.toLowerCase() !== 'psmodulepath')),
   });
   if (r.status !== 0) throw new Error(`compilação/execução falhou:\n${r.stdout}\n${r.stderr}`);
   return JSON.parse(r.stdout.trim());

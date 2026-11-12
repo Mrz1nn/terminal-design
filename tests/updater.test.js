@@ -588,7 +588,8 @@ describe('QA fixes', () => {
     delete env.TD_DATA_HOME;
     const out = spawnSync(process.execPath, [p.launcher], { encoding: 'utf8', env }).stdout;
     assert.ok(out.includes(`CFG=${p.configHome}`), out);
-    assert.ok(out.includes(`DATA=${p.dataHome}`), out);
+    // macOS: tmp dirs live under /var -> /private/var; the launcher sees its real path.
+    assert.ok(out.includes(`DATA=${p.dataHome}`) || out.includes(`DATA=${fs.realpathSync(p.dataHome)}`), out);
     const explicit = path.join(os.tmpdir(), 'explicit-cfg');
     const out2 = spawnSync(process.execPath, [p.launcher], { encoding: 'utf8', env: { ...env, TD_CONFIG_HOME: explicit } }).stdout;
     assert.ok(out2.includes(`CFG=${explicit}`), out2);

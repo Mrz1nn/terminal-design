@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createLineDecoder, encodeCommand } from './protocol.js';
+import { windowsPowerShellEnv } from '../../../packages/core/src/fs.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const HOST_SCRIPT = path.resolve(here, '..', 'native', 'voice-host.ps1');
@@ -44,6 +45,7 @@ export function startHost(options = {}) {
   const em = new EventEmitter();
   const child = spawn(powershellExe(), buildHostArgs(options), {
     windowsHide: true,
+    env: windowsPowerShellEnv(),
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   let exited = false;

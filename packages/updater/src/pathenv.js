@@ -11,6 +11,7 @@
 //
 // opts: { platform, home, backupDir, env }  (all optional)
 import fs from 'node:fs';
+import { windowsPowerShellEnv } from '../../core/src/fs.js';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -240,7 +241,7 @@ function runPs(action, dir) {
     encoding: 'utf8',
     windowsHide: true,
     timeout: 30000,
-    env: { ...process.env, TD_PATH_ACTION: action, TD_PATH_DIR: dir },
+    env: windowsPowerShellEnv(process.env, { TD_PATH_ACTION: action, TD_PATH_DIR: dir }),
   });
   const out = (r.stdout || '').trim().split(/\r?\n/).pop();
   if (r.status !== 0 || !['present', 'absent', 'unchanged', 'changed'].includes(out)) {

@@ -11,6 +11,7 @@ import { planSetup, runSetup } from './setup.js';
 import { MODELS, PINNED_RELEASE, voicePaths, verifyModel, readManifest } from './assets.js';
 import { HOST_SCRIPT, powershellExe } from './host.js';
 import { parseHotkey, hotkeyWarnings } from './hotkey.js';
+import { windowsPowerShellEnv } from '../../../packages/core/src/fs.js';
 
 export { parseHotkey, hotkeyWarnings, DEFAULT_HOTKEY, MOD } from './hotkey.js';
 export { cleanTranscript, finalizeText } from './text.js';
@@ -73,7 +74,7 @@ export async function doctor(opts, { probeMic = true } = {}) {
     checks.push({ name: 'Atalho de voz', ok: false, detail: e.message });
   }
 
-  const ps = spawnSync(powershellExe(), ['-NoProfile', '-NonInteractive', '-Command', '$PSVersionTable.PSVersion.ToString()'], { encoding: 'utf8', windowsHide: true, timeout: 20000 });
+  const ps = spawnSync(powershellExe(), ['-NoProfile', '-NonInteractive', '-Command', '$PSVersionTable.PSVersion.ToString()'], { encoding: 'utf8', windowsHide: true, timeout: 20000, env: windowsPowerShellEnv() });
   const psOk = ps.status === 0;
   checks.push({ name: 'PowerShell', ok: psOk, detail: psOk ? `Windows PowerShell ${ps.stdout.trim()}` : `powershell.exe indisponível (${ps.error?.message ?? ps.stderr?.trim()})` });
 

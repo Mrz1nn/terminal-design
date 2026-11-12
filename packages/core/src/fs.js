@@ -89,3 +89,14 @@ export function deepMerge(base, over) {
   }
   return out;
 }
+
+/**
+ * Environment for a Windows PowerShell 5.1 child process. When td runs inside PowerShell 7, the
+ * inherited PSModulePath points at PowerShell 7 modules and 5.1 then fails to load its own
+ * cmdlets. Without PSModulePath, Windows PowerShell rebuilds its default module path.
+ */
+export function windowsPowerShellEnv(env = process.env, extra = {}) {
+  const out = {};
+  for (const [k, v] of Object.entries(env)) if (k.toLowerCase() !== 'psmodulepath') out[k] = v;
+  return { ...out, ...extra };
+}
