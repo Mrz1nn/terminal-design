@@ -64,10 +64,11 @@ export async function runStatusLine({ subagent = false } = {}) {
   const paths = getPaths();
   const config = loadConfig(paths);
   const theme = safeTheme(config, paths);
-  const text = await readStdin();
+  // trim() also drops a leading U+FEFF, which Windows PowerShell adds when piping text.
+  const text = (await readStdin()).trim();
   let raw = {};
   try {
-    raw = text.trim() ? JSON.parse(text) : {};
+    raw = text ? JSON.parse(text) : {};
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) raw = {};
   } catch {
     process.stdout.write('terminal-design: JSON inválido recebido do Claude Code');

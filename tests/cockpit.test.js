@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { isolate, REAL_PAYLOAD } from './helpers.js';
 import { getPaths, stripAnsi, visibleWidth } from '../packages/core/src/index.js';
 import { loadConfig } from '../packages/config/src/index.js';
@@ -138,4 +140,14 @@ test('subagent rows follow the documented {id, content} JSON-lines protocol', ()
   assert.match(rows[0].content, /^● explorer .* 25% haiku · 1m Lendo arquivos$/);
   assert.match(rows[1].content, /^✓ Plan/);
   assert.ok(visibleWidth(rows[1].content) <= 80);
+});
+
+test('statusline accepts stdin with a UTF-8 BOM (Windows PowerShell pipe)', () => {
+  isolate();
+  const td = fileURLToPath(new URL('../bin/td.js', import.meta.url));
+  const input = '\uFEFF' + JSON.stringify(REAL_PAYLOAD) + '\r\n';
+  const r = spawnSync(process.execPath, [td, 'statusline'], { input, encoding: 'utf8', env: process.env });
+  assert.equal(r.status, 0);
+  assert.ok(!r.stdout.includes('JSON inválido'), r.stdout);
+  assert.ok(r.stdout.includes('Opus 5.5'), r.stdout);
 });
