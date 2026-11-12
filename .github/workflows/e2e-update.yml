@@ -126,9 +126,9 @@ jobs:
           Check ($cmd -match '^node "([^"]+)" (.+)$') "comando da status line inesperado: $cmd"
           $launcher = $Matches[1]; $slArgs = $Matches[2] -split ' '
           $json = [IO.File]::ReadAllText($sample)
-          function SL { $o = $json | & node $launcher @slArgs 2>&1 | Out-String; Write-Host "(status line exit $LASTEXITCODE)"; $o }
+          function Get-StatusLine { $o = $json | & node $launcher @slArgs 2>&1 | Out-String; Write-Host "(status line exit $LASTEXITCODE)"; $o }
 
-          SL | Write-Host
+          Get-StatusLine | Write-Host
           $cache = "$env:TD_DATA_HOME\cache\update-check.json"
           for ($i = 0; $i -lt 90 -and -not ((Test-Path $cache) -and (Select-String -Path $cache -Pattern checkedAt -Quiet)); $i++) { Start-Sleep 1 }
           if ((Test-Path $cache) -and (Select-String -Path $cache -Pattern 'rate-limit' -Quiet)) {
@@ -140,12 +140,12 @@ jobs:
           Get-Content "$env:TD_CONFIG_HOME\config.json" -Raw -ErrorAction SilentlyContinue | Write-Host
           Get-ChildItem Env: | Where-Object Name -match '^(TD_|CI$)' | Format-Table Name, Value | Out-String | Write-Host
           Get-Content $cache -Raw -ErrorAction SilentlyContinue | Write-Host
-          $out = SL; Write-Host $out
+          $out = Get-StatusLine; Write-Host $out
           Check ($out -match "atualizar para $([regex]::Escape($env:LATEST))") 'aviso de atualização não apareceu'
 
           & $td update --yes; Check ($LASTEXITCODE -eq 0) 'td update falhou'
           $v = & $td version; Check ($v -match [regex]::Escape($env:LATEST)) 'não atualizou'
-          $out = SL; Write-Host $out
+          $out = Get-StatusLine; Write-Host $out
           Check ($out -match 'Opus 5.5') 'status line quebrou depois do update'
           Check ($out -notmatch 'atualizar para') 'aviso continuou depois do update'
 
@@ -153,6 +153,6 @@ jobs:
           & $td update --yes; $v = & $td version; Check ($v -match [regex]::Escape($env:LATEST)) 'segundo update falhou'
 
           & $td theme set nord --no-color; Check ($LASTEXITCODE -eq 0) 'theme set falhou'
-          Check ((SL) -match 'Opus 5.5') 'status line com tema falhou'
+          Check ((Get-StatusLine) -match 'Opus 5.5') 'status line com tema falhou'
           & $td doctor --no-color
           & $td uninstall --yes; Check ($LASTEXITCODE -eq 0) 'uninstall falhou'
