@@ -50,8 +50,13 @@ export default {
         return;
       case 'edit': {
         ensureConfig(paths);
-        const editor = process.env.VISUAL || process.env.EDITOR || (process.platform === 'win32' ? 'notepad' : 'vi');
-        await new Promise((resolve) => spawn(editor, [paths.configFile], { stdio: 'inherit', shell: process.platform === 'win32' }).on('exit', resolve));
+        const custom = process.env.VISUAL || process.env.EDITOR;
+        // Defaults: Notepad on Windows, the default text editor on macOS (waits until it closes), vi elsewhere.
+        const [cmd, args] = custom ? [custom, [paths.configFile]]
+          : process.platform === 'win32' ? ['notepad', [paths.configFile]]
+            : process.platform === 'darwin' ? ['open', ['-W', '-t', paths.configFile]]
+              : ['vi', [paths.configFile]];
+        await new Promise((resolve) => spawn(cmd, args, { stdio: 'inherit', shell: process.platform === 'win32' || !!custom }).on('exit', resolve).on('error', resolve));
         const problems = validate(deepMerge(structuredClone(DEFAULTS), loadUserConfig(paths)));
         if (problems.length) problems.forEach((p) => ui.warn(p));
         else ui.ok('Configuração válida.');

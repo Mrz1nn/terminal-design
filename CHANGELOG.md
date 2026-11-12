@@ -4,6 +4,15 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 ## [Não lançado]
 
+## [0.2.0] - 2026-11-11
+
+### Adicionado
+- Suporte ao macOS, nos modelos com chip Apple e nos Intel, e ao Linux. Inclui o instalador `install.sh`, o PATH configurado por um bloco marcado no `~/.zshrc` e no `~/.bash_profile`, a atualização e a desinstalação. Inclui também um atalho que acha o Node.js mesmo quando o Claude Code roda a status line sem o seu perfil (Homebrew, nvm, Volta).
+- Instalação de uma linha: `curl ... get.sh | sh` no Mac e no Linux, e `irm ... get.ps1 | iex` no Windows. Ela instala o Node.js se faltar, baixa a versão mais recente com SHA-256 conferido, liga a status line e, no Windows, já baixa a voz.
+- Botão flutuante de microfone no Windows: clique para falar e clique de novo para parar. O botão nunca rouba o foco da sua janela. Clicar no ícone da bandeja também liga e desliga a gravação.
+- Exportação de temas para o iTerm2 (`td theme export <nome> <arquivo>.itermcolors --iterm`).
+- CI em Windows, Linux e macOS (Apple Silicon e Intel), com instalação real nos três.
+
 ## [0.1.1] - 2026-11-11
 
 ### Adicionado

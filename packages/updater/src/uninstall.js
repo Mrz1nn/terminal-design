@@ -8,7 +8,7 @@ import { readMarker, LAUNCHER_HEADER, MARKER_NAME } from './launcher.js';
 import { readCurrent } from './store.js';
 
 /** Program files and caches inside dataHome. */
-export const DATA_ITEMS = ['versions', 'bin', 'launcher.js', 'package.json', 'current.json', 'staging', 'cache', 'logs', 'voice', 'claude-code-previous.json', MARKER_NAME];
+export const DATA_ITEMS = ['versions', 'bin', 'launcher.js', 'package.json', 'current.json', 'staging', 'cache', 'logs', 'voice', 'claude-code-previous.json', 'node', MARKER_NAME];
 /** Extra dataHome items removed only when the config is purged too (they hold config copies). */
 export const DATA_PURGE_ITEMS = ['backups'];
 /** Items inside configHome. */
@@ -71,14 +71,27 @@ function removeItems(base, names, removed, kept) {
   } catch { /* leave it */ }
 }
 
+/** Items that may be in use by the running td on Windows (td.cmd, the private node.exe). */
+const IN_USE_ITEMS = ['bin', 'node'];
+
 /**
- * Delete bin (and dataHome if it ends up empty) a moment after this process exits.
- * Needed because cmd.exe re-reads td.cmd after node returns; deleting it now would print
- * "batch file not found". Detached + hidden; paths go through argv, no shell.
+ * Delete `dirs` (and dataHome if it ends up empty) a moment after this process exits.
+ * Needed on Windows because cmd.exe re-reads td.cmd after node returns, and the private
+ * node.exe that runs us is locked while it runs. Detached + hidden.
+ * Windows uses cmd.exe (not node, which could be the very node.exe being deleted).
  */
-export function scheduleDeferredRemoval(binDir, dataHome) {
-  const code = "const fs=require('fs');const [b,d]=process.argv.slice(1);setTimeout(()=>{try{fs.rmSync(b,{recursive:true,force:true,maxRetries:10,retryDelay:300})}catch{}try{if(!fs.readdirSync(d).length)fs.rmdirSync(d)}catch{}},2500)";
-  const child = spawn(process.execPath, ['-e', code, binDir, dataHome], { detached: true, stdio: 'ignore', windowsHide: true });
+export function scheduleDeferredRemoval(dirs, dataHome) {
+  const list = (Array.isArray(dirs) ? dirs : [dirs]).filter(Boolean);
+  let child;
+  if (process.platform === 'win32') {
+    // Windows paths cannot contain '"', so plain quoting is safe here.
+    const rms = list.map((d) => `rmdir /s /q "${d}"`).join(' & ');
+    const script = `ping -n 4 127.0.0.1 >nul & ${rms} & ping -n 2 127.0.0.1 >nul & ${rms} & rmdir "${dataHome}" 2>nul`;
+    child = spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/c', script], { detached: true, stdio: 'ignore', windowsHide: true, windowsVerbatimArguments: true });
+  } else {
+    const code = "const fs=require('fs');const a=process.argv.slice(1);const d=a.pop();setTimeout(()=>{for(const b of a){try{fs.rmSync(b,{recursive:true,force:true,maxRetries:10,retryDelay:300})}catch{}}try{if(!fs.readdirSync(d).length)fs.rmdirSync(d)}catch{}},2500)";
+    child = spawn(process.execPath, ['-e', code, ...list, dataHome], { detached: true, stdio: 'ignore', windowsHide: true });
+  }
   child.on('error', () => {});
   child.unref();
 }
@@ -97,12 +110,16 @@ export function removeInstall(paths, { keepConfig = true, deferBin = false, env 
   // When backups stay behind, the marker stays too, so a later `td uninstall --purge` can
   // still prove the folder is ours.
   const keepMarker = keepConfig && fs.existsSync(path.join(paths.dataHome, 'backups'));
-  const order = DATA_ITEMS.filter((n) => n !== 'bin' && !(keepMarker && n === MARKER_NAME)).concat(keepConfig ? [] : DATA_PURGE_ITEMS, deferBin ? [] : ['bin']);
+  const order = DATA_ITEMS.filter((n) => !IN_USE_ITEMS.includes(n) && !(keepMarker && n === MARKER_NAME))
+    .concat(keepConfig ? [] : DATA_PURGE_ITEMS, deferBin ? [] : IN_USE_ITEMS);
   removeItems(paths.dataHome, order, removed, kept);
   const deferred = [];
-  if (deferBin && fs.existsSync(paths.binDir)) {
-    scheduleDeferredRemoval(paths.binDir, paths.dataHome);
-    deferred.push(paths.binDir);
+  if (deferBin) {
+    const dirs = IN_USE_ITEMS.map((n) => path.join(paths.dataHome, n)).filter((d) => fs.existsSync(d));
+    if (dirs.length) {
+      scheduleDeferredRemoval(dirs, paths.dataHome);
+      deferred.push(...dirs);
+    }
   }
   if (!keepConfig && !configOwned) kept.push(`${paths.configHome} (pasta de configuração personalizada não registrada pelo instalador; apague manualmente se quiser)`);
   else if (!keepConfig) removeItems(paths.configHome, CONFIG_ITEMS, removed, kept);

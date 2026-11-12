@@ -32,7 +32,7 @@ A variável de ambiente `TD_NO_UPDATE_CHECK=1` desliga o aviso. `GITHUB_TOKEN` �
 3. Pede confirmação, a menos que você use `--yes`.
 4. Baixa `terminal-design-<versão>.zip` e `SHA256SUMS.txt`, só por HTTPS.
 5. **Confere o SHA-256** do zip. Se o checksum não bater ou não existir, a atualização é recusada.
-6. Valida os nomes dentro do zip, para que nada seja gravado fora da pasta temporária, e extrai em `staging\` com o `tar.exe` do Windows.
+6. Valida os nomes dentro do zip, para que nada seja gravado fora da pasta temporária, e extrai em `staging`. No Windows a extração usa o `tar.exe` do sistema. No macOS e no Linux usa o leitor de zip embutido no Terminal-Design, sem depender de `unzip` nem `tar`.
 7. Confere o pacote: a versão do `package.json` precisa ser igual à da release, e `bin\td.js` precisa existir.
 8. Faz um teste rodando `td version` da nova versão. É o único código baixado que é executado, e só depois do checksum.
 9. Faz um backup do `config.json` em `backups\`. A configuração em si não é alterada.
@@ -40,6 +40,15 @@ A variável de ambiente `TD_NO_UPDATE_CHECK=1` desliga o aviso. `GITHUB_TOKEN` �
 11. Mantém só as duas últimas versões (a atual e a anterior) e apaga as mais antigas.
 
 Se qualquer passo depois da instalação falhar, o `current.json` volta ao que era, a pasta nova é removida e você continua na versão que já tinha. Duas atualizações ao mesmo tempo são bloqueadas.
+
+## macOS e Linux
+
+Funciona igual ao Windows. O mesmo zip da release serve para os três sistemas, e `td update`, `td update --check` e `td update --rollback` têm o mesmo comportamento.
+
+- O programa fica em `~/.local/share/terminal-design/versions/<versão>` e a configuração em `~/.config/terminal-design`, que as atualizações nunca alteram.
+- O teste da nova versão (`td version`) roda com o mesmo Node.js que está rodando o `td update`.
+- O atalho `bin/td` e o bloco do PATH no `~/.zshrc` não mudam numa atualização, então não é preciso abrir um terminal novo.
+- Se o instalador de uma linha baixou um Node.js próprio (`~/.local/share/terminal-design/node`), `td update` não mexe nele. Para trocar de versão do Node.js, rode o instalador de uma linha de novo.
 
 ## Voltar uma versão
 

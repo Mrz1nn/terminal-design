@@ -83,6 +83,31 @@ Com `td voice` rodando:
 - A gravação para sozinha em `voice.maxSeconds` (60 s por padrão).
 - Gravações com menos de 0,3 s ou só com silêncio são descartadas sem chamar o whisper.
 
+### Botão de microfone
+
+Com o `td voice` rodando, aparece na tela um botão redondo de microfone, de uns 44 px, sempre por cima das outras janelas. É a alternativa ao atalho quando você prefere usar o mouse, como o microfone de ditado do Chrome.
+
+- **Clique** para começar a gravar e **clique de novo** para parar. Isso vale em qualquer `voice.mode`. O atalho continua funcionando como sempre e os dois podem ser misturados: no modo `toggle`, o atalho também para uma gravação iniciada pelo botão. No push-to-talk, soltar o atalho só encerra gravações iniciadas pelo atalho.
+- **Arraste** o botão para onde quiser. A posição fica salva em `%LOCALAPPDATA%\TerminalDesign\voice\cache\button.json`. Se ela cair fora das telas atuais, por exemplo depois de desconectar um monitor, o botão volta para o canto inferior direito.
+- **Clique com o botão direito** para abrir o menu: "Copiar última transcrição não inserida", "Esconder botão" e "Sair". Um botão escondido volta pelo menu da bandeja, em "Mostrar botão do microfone", ou na próxima vez que o `td voice` for iniciado.
+- **Cores**:
+
+  | Cor | Significado |
+  |---|---|
+  | Cinza | pronto |
+  | Vermelho | gravando; o anel branco mostra o tempo gravado em relação a `voice.maxSeconds` e pulsa a cada segundo |
+  | Âmbar | transcrevendo |
+  | Âmbar, com a dica "texto guardado, clique com o botão direito para copiar" | a inserção foi bloqueada |
+
+- **Clique no ícone da bandeja** (botão esquerdo) também liga e desliga a gravação.
+- Para desligar o botão: `--no-button` ou `td config set voice.button false`.
+
+O botão **nunca recebe foco**. A janela é criada com `WS_EX_NOACTIVATE` e `WS_EX_TOOLWINDOW` e responde `MA_NOACTIVATE` ao `WM_MOUSEACTIVATE`. Por isso, a janela em que você estava digitando continua em primeiro plano, e é para ela que o texto vai. A regra de destino é a mesma do atalho: o texto só é inserido na janela que estava em primeiro plano quando a gravação começou. Se nesse momento a janela em primeiro plano for do próprio td voice (botão, overlay, menu) ou a barra de tarefas, o td usa a última janela externa que esteve em primeiro plano, acompanhada por um gancho `EVENT_SYSTEM_FOREGROUND`. Se não houver nenhuma, a inserção é bloqueada ("nenhuma janela em foco") e o texto fica guardado para copiar.
+
+Clicar no ícone da bandeja coloca a barra de tarefas em primeiro plano. A gravação usa a sua última janela como destino, mas o Windows só deixa digitar nela se ela voltar a ficar em foco antes do fim da transcrição. Se não voltar, a inserção é bloqueada e o texto fica guardado para copiar. Com o botão flutuante isso não acontece.
+
+Começar e parar pelo botão usam o mesmo caminho do atalho: cada gravação é inserida uma única vez, `voice.maxSeconds` continua valendo e gravações curtas demais são descartadas. Cliques durante a parada de uma gravação, ou menos de 0,4 s depois de começar ou de parar, são ignorados, para que um clique duplo não comece e pare a gravação ao mesmo tempo.
+
 ### Proteções na hora de inserir o texto
 
 | Situação | O que acontece |
@@ -99,7 +124,8 @@ Com `td voice` rodando:
 ### Indicadores
 
 - **Overlay**: uma faixa pequena acima da barra de tarefas mostra "● Gravando 3s" e depois "◌ Transcrevendo…". Ela nunca recebe foco, então o texto continua indo para a sua janela. Para desligar: `--no-overlay`.
-- **Bandeja**: o ícone fica cinza quando está pronto, vermelho gravando e âmbar transcrevendo ou com texto guardado. O menu do ícone tem "Copiar última transcrição não inserida" e "Sair". Para desligar: `--no-tray`.
+- **Bandeja**: o ícone fica cinza quando está pronto, vermelho gravando e âmbar transcrevendo ou com texto guardado. Clique com o botão esquerdo para ligar ou desligar a gravação. O menu do ícone tem "Copiar última transcrição não inserida", "Mostrar botão do microfone" e "Sair". Para desligar: `--no-tray`.
+- **Botão de microfone**: veja [Botão de microfone](#botão-de-microfone). Para desligar: `--no-button`.
 - **Console**: uma linha por evento, com o texto reconhecido e o tempo que levou.
 
 ### Configuração (`td config set voice.<chave> <valor>`)
@@ -114,6 +140,7 @@ Com `td voice` rodando:
 | `voice.insertMode` | `type` | `type` (teclas Unicode simuladas) ou `paste` (área de transferência + Ctrl+V) |
 | `voice.appendSpace` | `true` | coloca um espaço depois de cada trecho, para emendar frases |
 | `voice.maxSeconds` | `60` | 1 a 600 |
+| `voice.button` | `true` | mostra o botão flutuante de microfone (`--no-button` desliga só nesta execução) |
 
 #### Por que `Ctrl+Shift+F9`
 

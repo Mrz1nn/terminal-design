@@ -7,6 +7,9 @@ import { renderStatusLine } from '../../../../apps/terminal-cockpit/src/index.js
 import { SAMPLE_PAYLOAD } from '../sample.js';
 import * as wt from '../../../../integrations/windows-terminal/index.js';
 import * as vscode from '../../../../integrations/vscode/index.js';
+import * as iterm from '../../../../integrations/iterm2/index.js';
+
+const NOT_WINDOWS = 'O Windows Terminal só existe no Windows. No Mac, use td theme export <nome> <arquivo>.itermcolors --iterm (iTerm2) ou --vscode.';
 
 function swatches(theme, mode) {
   if (mode === 'none') return '';
@@ -55,7 +58,8 @@ function setTheme(name, flags, ctx) {
   setConfigValue('theme.name', name, ctx.paths);
   ui.ok(`Tema ${ui.c.bold(name)} aplicado. A status line do Claude Code muda na próxima atualização.`);
   ui.print(preview(name, { ...ctx, config: { ...ctx.config, theme: { name, overrides: {} } } }).replace(/^/gm, '  '));
-  if (flags.wt) {
+  if (flags.wt && process.platform !== 'win32') ui.warn(NOT_WINDOWS);
+  else if (flags.wt) {
     const r = wt.syncSchemes(ctx.paths);
     ui.ok(`Windows Terminal: ${r.count} esquemas em ${r.file}`);
     ui.print(`  ${ui.c.muted('Escolha "TD ' + (loadTheme(name, ctx.paths).displayName ?? name) + '" em Configurações > Perfil > Aparência > Esquema de cores.')}`);
@@ -73,6 +77,7 @@ export default {
     'td theme import <arquivo>     instala um tema .json [--force]',
     'td theme export <nome> <arq>  exporta (com personalizações) [--as <novo-nome>]',
     'td theme export <nome> <arq> --vscode   gera cores para o terminal do VS Code',
+    'td theme export <nome> <arq>.itermcolors --iterm   gera um preset para o iTerm2 (Mac)',
     'td theme wt                   sincroniza todos os temas com o Windows Terminal',
   ],
   async run({ args, flags, ctx }) {
@@ -100,6 +105,12 @@ export default {
       case 'export': {
         if (!a || !b) throw new Error('uso: td theme export <nome> <arquivo.json>');
         const out = path.resolve(b);
+        if (flags.iterm) {
+          iterm.writeItermColors(loadTheme(a, ctx.paths), out);
+          ui.ok(`Preset do iTerm2 salvo em ${out}`);
+          ui.print(`  ${ui.c.muted('No iTerm2: Settings > Profiles > Colors > Color Presets > Import, e escolha o arquivo.')}`);
+          return;
+        }
         if (flags.vscode) {
           vscode.writeSnippet(loadTheme(a, ctx.paths), out);
           ui.ok(`Cores do VS Code salvas em ${out}`);
@@ -111,6 +122,7 @@ export default {
         return;
       }
       case 'wt': {
+        if (process.platform !== 'win32') { ui.warn(NOT_WINDOWS); return 1; }
         if (!wt.isWindowsTerminalInstalled()) ui.warn('Windows Terminal não encontrado; o fragmento será criado mesmo assim.');
         const r = wt.syncSchemes(ctx.paths);
         ui.ok(`${r.count} esquemas de cores enviados ao Windows Terminal (${r.file})`);

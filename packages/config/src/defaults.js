@@ -56,6 +56,8 @@ export const DEFAULTS = Object.freeze({
     prompt: null,
     overlay: true,
     tray: true,
+    // Floating click-to-talk mic button (Windows). Position is kept in voice/cache/button.json.
+    button: true,
   },
   telemetry: false,
 });

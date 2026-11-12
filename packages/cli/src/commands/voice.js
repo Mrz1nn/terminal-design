@@ -21,6 +21,7 @@ function overridesFrom(flags) {
     modelPath: typeof flags.modelPath === 'string' ? flags.modelPath : undefined,
     overlay: flags.overlay === false ? false : undefined,
     tray: flags.tray === false ? false : undefined,
+    button: flags.button === false ? false : undefined,
     appendSpace: flags.space === false ? false : undefined,
   };
   if (o.language && !LANGS.includes(o.language)) throw new Error(`--language inválido: ${o.language} (use ${LANGS.join(', ')})`);
@@ -153,7 +154,7 @@ async function cmdStart({ ctx, opts }) {
   const engine = createEngine(opts);
   const time = () => new Date().toLocaleTimeString('pt-BR');
   engine.on('status', ({ state, message }) => {
-    if (state === 'recording') ui.print(`  ${ui.c.muted(time())} ${ui.c.error('● gravando')}`);
+    if (state === 'recording') ui.print(`  ${ui.c.muted(time())} ${ui.c.error('● gravando')}${message === 'button' ? ui.c.muted(' (botão)') : message === 'tray' ? ui.c.muted(' (bandeja)') : ''}`);
     else if (state === 'processing') ui.print(`  ${ui.c.muted(time())} ${ui.c.warning('◌ transcrevendo…')}`);
     else if (state === 'idle' && message) ui.print(`  ${ui.c.muted(time())} ${ui.c.muted(message)}`);
     else if (state === 'stopped' && message) ui.warn(message);
@@ -176,6 +177,7 @@ async function cmdStart({ ctx, opts }) {
   const ready = await engine.start();
   const how = opts.mode === 'toggle' ? `aperte ${hk.label} para começar e de novo para parar` : `segure ${hk.label} enquanto fala e solte para digitar`;
   ui.ok(`pronto: ${how}`);
+  if (ready.button) ui.print(`  ${ui.c.accent('●')} botão de microfone na tela: clique para começar e de novo para parar (arraste para mover, botão direito para o menu; --no-button desliga)`);
   ui.print(`  ${ui.c.muted(`microfone: ${ready.device} · idioma: ${opts.language} · modelo: ${opts.model.name ?? opts.model.path} · inserção: ${opts.insertMode}`)}`);
   ui.print(`  ${ui.c.muted('Ctrl+C aqui (ou "Sair" no ícone da bandeja) encerra. Nenhum áudio é guardado.')}`);
   ui.print(`  ${ui.c.muted('Se a janela mudar ou houver tecla pressionada, nada é digitado e o texto fica guardado para copiar.')}`);
@@ -218,7 +220,7 @@ export default {
     'td voice test [--seconds=5]      grava e mostra o texto, sem digitar',
     'td voice status [--json]',
     'opções: --toggle --hotkey=Ctrl+Shift+F8 --language=pt|en|auto --mic=<índice|nome>',
-    '        --paste --no-space --no-overlay --no-tray --whisper=<exe> --model-path=<bin>',
+    '        --paste --no-space --no-overlay --no-tray --no-button --whisper=<exe> --model-path=<bin>',
   ],
   async run({ args, flags, ctx }) {
     const sub = args[0] ?? 'start';

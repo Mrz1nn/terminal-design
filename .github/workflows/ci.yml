@@ -3,7 +3,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'feat/**', 'fix/**']
   pull_request:
 
 permissions:
@@ -14,7 +14,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        # macos-latest = Apple Silicon (arm64), macos-15-intel = Intel (x64)
+        os: [windows-latest, ubuntu-latest, macos-latest, macos-15-intel]
         node: ['18', '20', '22']
     runs-on: ${{ matrix.os }}
     steps:
@@ -33,3 +34,62 @@ jobs:
           TD_DATA_HOME: ${{ runner.temp }}/td-data
           TD_CONFIG_HOME: ${{ runner.temp }}/td-config
           CLAUDE_CONFIG_DIR: ${{ runner.temp }}/claude
+
+      # Real install on macOS/Linux into a throwaway HOME: installer, PATH block, shim,
+      # Claude Code integration, status line through the shim, uninstall.
+      - name: Install smoke test (macOS / Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/home"
+          mkdir -p "$HOME" && touch "$HOME/.zshrc"
+          unset TD_DATA_HOME TD_CONFIG_HOME
+          export CLAUDE_CONFIG_DIR="$HOME/.claude"
+          sh scripts/install.sh --claude-code
+          grep -q "terminal-design" "$HOME/.zshrc"
+          TD="$HOME/.local/share/terminal-design/bin/td"
+          "$TD" version
+          "$TD" doctor --no-color || true
+          CMD=$(node -e "console.log(require(process.env.CLAUDE_CONFIG_DIR + '/settings.json').statusLine.command)")
+          echo "status line command: $CMD"
+          OUT=$(env -i HOME="$HOME" PATH=/usr/bin:/bin sh -c "$CMD" < tests/fixtures/statusline-sample.json)
+          echo "$OUT"
+          echo "$OUT" | grep -q "Opus 5.5"
+          "$TD" uninstall --yes
+          ! grep -q "terminal-design" "$HOME/.zshrc"
+
+      # One-line installer (get.sh / get.ps1) against a release zip built from this commit.
+      - name: One-line install (macOS / Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/pack-release.js --out="$RUNNER_TEMP/dist"
+          export HOME="$RUNNER_TEMP/home2"
+          mkdir -p "$HOME" && touch "$HOME/.zshrc"
+          unset TD_DATA_HOME TD_CONFIG_HOME
+          export CLAUDE_CONFIG_DIR="$HOME/.claude"
+          V=$(node -p "require('./package.json').version")
+          TD_RELEASE_ZIP="$RUNNER_TEMP/dist/terminal-design-$V.zip" TD_RELEASE_SUMS="$RUNNER_TEMP/dist/SHA256SUMS.txt" sh scripts/get.sh
+          "$HOME/.local/share/terminal-design/bin/td" version
+          CMD=$(node -e "console.log(require(process.env.CLAUDE_CONFIG_DIR + '/settings.json').statusLine.command)")
+          env -i HOME="$HOME" PATH=/usr/bin:/bin sh -c "$CMD" < tests/fixtures/statusline-sample.json | grep -q "Opus 5.5"
+
+      - name: One-line install (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node scripts/pack-release.js --out="$env:RUNNER_TEMP/dist"
+          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $env:TD_DATA_HOME = "$env:RUNNER_TEMP\td-get-data"
+          $env:TD_CONFIG_HOME = "$env:RUNNER_TEMP\td-get-config"
+          $env:CLAUDE_CONFIG_DIR = "$env:RUNNER_TEMP\td-get-claude"
+          $env:TD_NO_VOICE = '1'
+          $env:TD_NO_PATH = '1'
+          $env:TD_RELEASE_ZIP = "$env:RUNNER_TEMP\dist\terminal-design-$v.zip"
+          $env:TD_RELEASE_SUMS = "$env:RUNNER_TEMP\dist\SHA256SUMS.txt"
+          Get-Content scripts/get.ps1 -Raw | Invoke-Expression
+          & "$env:TD_DATA_HOME\bin\td.cmd" version
+          if ($LASTEXITCODE -ne 0) { throw 'td.cmd failed' }

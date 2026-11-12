@@ -16,7 +16,7 @@ import {
   getUpdateNotice, checkForUpdates, cacheFile,
   addToPathString, removeFromPathString, pathHas,
   removeInstall, installLocal, listProgramFiles,
-  readMarker, markerFile, ownsDataHome, sameDir, workerEnv,
+  readMarker, markerFile, ownsDataHome, sameDir, workerEnv, shimPath,
 } from '../packages/updater/src/index.js';
 
 const PKG_META = { terminalDesign: { repository: 'Mrz1nn/terminal-design', releaseAsset: 'terminal-design-{version}.zip', checksumAsset: 'SHA256SUMS.txt' } };
@@ -464,7 +464,7 @@ describe('PATH helpers (pure, the real PATH is never touched)', () => {
     assert.equal(added, 'C:\\a;%USERPROFILE%\\bin;C:\\TD\\bin');
     assert.equal(addToPathString(added, 'c:\\td\\BIN\\', env), added);
     assert.equal(addToPathString(base, 'C:\\Users\\x\\bin', env), base);
-    assert.ok(pathHas(added, 'C:\\td\\bin', env));
+    assert.ok(pathHas(added, 'C:\\td\\bin', env, 'win32'));
   });
   test('remove drops only matching entries', () => {
     assert.equal(removeFromPathString('C:\\a;C:\\TD\\bin\\;;C:\\b', 'c:\\td\\bin', env), 'C:\\a;C:\\b');
@@ -507,7 +507,7 @@ describe('uninstall and local install', () => {
     const s1 = installLocal({ sourceRoot: src, paths: p, addPath: false });
     assert.equal(s1.configCreated, true);
     assert.equal(s1.path, 'skipped');
-    for (const f of [p.launcher, p.currentFile, path.join(p.binDir, 'td.cmd'), path.join(p.binDir, 'td'), path.join(p.versions, '0.1.0', 'bin', 'td.js')]) {
+    for (const f of [p.launcher, p.currentFile, shimPath(p), path.join(p.binDir, 'td'), path.join(p.versions, '0.1.0', 'bin', 'td.js')]) {
       assert.ok(fs.existsSync(f), f);
     }
     assert.equal(fs.existsSync(path.join(p.versions, '0.1.0', 'tests')), false);
@@ -529,7 +529,7 @@ test('removeInstall deferBin deletes bin after a delay (td.cmd may still be runn
   writeLauncherFiles(p);
   const r = removeInstall(p, { keepConfig: true, deferBin: true });
   assert.deepEqual(r.deferred, [p.binDir]);
-  assert.ok(fs.existsSync(path.join(p.binDir, 'td.cmd')), 'still there right after');
+  assert.ok(fs.existsSync(shimPath(p)), 'still there right after');
   for (let i = 0; i < 40 && fs.existsSync(p.binDir); i++) await new Promise((res) => setTimeout(res, 250));
   assert.equal(fs.existsSync(p.binDir), false);
 });

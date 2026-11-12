@@ -63,9 +63,11 @@ export default {
       }
     }
 
-    if (process.platform === 'win32') {
-      const r = removeUserPath(paths.binDir);
-      if (r.result === 'changed') ui.ok('PATH: entrada do Terminal-Design removida.');
+    {
+      // Windows: user PATH in the registry. macOS/Linux: our marked block in the shell profiles
+      // (each file is backed up first; nothing else in them is touched).
+      const r = removeUserPath(paths.binDir, { backupDir: paths.backups });
+      if (r.result === 'changed') ui.ok(`PATH: entrada do Terminal-Design removida${r.files?.length ? ` de ${r.files.join(', ')}` : ''}.`);
       else if (r.result === 'unchanged') ui.info('PATH: nada a remover.');
       else ui.warn(`PATH: não foi possível alterar (${r.detail || r.result}). Remova manualmente: ${paths.binDir}`);
     }

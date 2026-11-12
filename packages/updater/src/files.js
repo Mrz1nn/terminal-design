@@ -1,4 +1,4 @@
-// Which files make up "the program". Shared by the local installer (scripts/install.ps1)
+// Which files make up "the program". Shared by the local installer (scripts/install.ps1, scripts/install.sh)
 // and the release packer (scripts/pack-release.js) so both ship exactly the same set.
 import fs from 'node:fs';
 import path from 'node:path';

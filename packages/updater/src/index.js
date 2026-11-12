@@ -5,6 +5,7 @@ export * from './zip.js';
 export * from './files.js';
 export * from './store.js';
 export * from './launcher.js';
+export * from './shim-sh.js';
 export * from './pathenv.js';
 export * from './notice.js';
 export * from './update.js';

@@ -70,6 +70,30 @@ test('uninstall leaves a foreign status line alone', () => {
   assert.equal(readJson(file).statusLine.command, 'other');
 });
 
+test('status line command: shell shim on macOS/Linux managed installs, node + launcher on Windows', () => {
+  isolate();
+  const paths = getPaths();
+  const managed = { ...paths, appRoot: path.join(paths.versions, '0.1.1') };
+  assert.match(cc.statusCommand(managed, false, 'darwin'), /^"[^"]+\/bin\/td" statusline --from=terminal-design$/);
+  assert.match(cc.statusCommand(managed, true, 'linux'), /^"[^"]+\/bin\/td" statusline --subagent --from=terminal-design$/);
+  assert.match(cc.statusCommand(managed, false, 'win32'), /^node "[^"]+\/launcher\.js" statusline --from=terminal-design$/);
+  assert.match(cc.statusCommand(paths, false, 'darwin'), /^node "[^"]+\/bin\/td\.js" statusline/, 'dev clone uses node + td.js');
+  assert.ok(cc.isOurs({ command: cc.statusCommand(managed, false, 'darwin') }));
+});
+
+test('iTerm2 preset is a valid plist with all 16 ANSI colors', async () => {
+  isolate();
+  const { toItermColors } = await import('../integrations/iterm2/index.js');
+  const theme = (await import('../packages/themes/src/index.js')).loadTheme('nord');
+  const xml = toItermColors(theme);
+  assert.match(xml, /^<\?xml version="1\.0"/);
+  for (let i = 0; i < 16; i++) assert.ok(xml.includes(`<key>Ansi ${i} Color</key>`), `Ansi ${i}`);
+  assert.ok(xml.includes('<key>Background Color</key>'));
+  // nord background #2e3440 -> red 46/255
+  assert.ok(xml.includes(`<real>${(46 / 255).toFixed(6)}</real>`));
+  assert.equal((xml.match(/<dict>/g) || []).length, 1 + 16 + 8);
+});
+
 test('Windows Terminal fragment contains every theme', () => {
   const root = isolate();
   const env = { LOCALAPPDATA: path.join(root, 'local') };

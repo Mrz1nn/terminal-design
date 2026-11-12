@@ -41,23 +41,30 @@ if (-not (Test-Path (Join-Path $repo 'package.json')) -or -not (Test-Path (Join-
 }
 
 # Node.js >= 18.17
-$nodeCmd = Get-Command node -ErrorAction SilentlyContinue
-if (-not $nodeCmd) {
+# TD_NODE (used by get.ps1 with a private Node.js) wins over the node in PATH.
+if ($env:TD_NODE) {
+  if (-not (Test-Path -LiteralPath $env:TD_NODE -PathType Leaf)) { Fail "TD_NODE aponta para um arquivo que não existe: $($env:TD_NODE)" }
+  $nodeExe = $env:TD_NODE
+} else {
+  $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+  if ($nodeCmd) { $nodeExe = $nodeCmd.Source } else { $nodeExe = $null }
+}
+if (-not $nodeExe) {
   Fail 'Node.js não encontrado. Instale o Node.js 18.17 ou mais novo (LTS recomendado): https://nodejs.org/pt-br/download  e abra um terminal novo.'
 }
-$nodeVersion = (& node -p 'process.versions.node' 2>$null)
+$nodeVersion = (& $nodeExe -p 'process.versions.node' 2>$null)
 if (-not $nodeVersion) { Fail 'não foi possível executar o Node.js.' }
 try { $parsed = [version]($nodeVersion.Trim() -replace '-.*$', '') } catch { Fail "versão do Node.js não reconhecida: $nodeVersion" }
 if ($parsed -lt [version]'18.17.0') {
   Fail "o Terminal-Design precisa do Node.js 18.17 ou mais novo (encontrado $nodeVersion). Atualize em https://nodejs.org/pt-br/download"
 }
-Write-Host "  > Node.js $nodeVersion ($($nodeCmd.Source))"
+Write-Host "  > Node.js $nodeVersion ($nodeExe)"
 
 $nodeArgs = @((Join-Path $repo 'packages\updater\src\installer.js'))
 if ($NoPath) { $nodeArgs += '--no-path' }
 if ($Theme) { $nodeArgs += "--theme=$Theme" }
 
-& node @nodeArgs
+& $nodeExe @nodeArgs
 if ($LASTEXITCODE -ne 0) { Fail 'a instalação não foi concluída. A nova versão não foi ativada; a instalação anterior, se havia, continua como estava.' }
 
 if ($env:TD_DATA_HOME) { $dataHome = $env:TD_DATA_HOME } else { $dataHome = Join-Path $env:LOCALAPPDATA 'TerminalDesign' }
@@ -68,12 +75,12 @@ $launcher = Join-Path $dataHome 'launcher.js'
 if (-not $NoPath -and (($env:Path -split ';') -notcontains $binDir)) { $env:Path = "$env:Path;$binDir" }
 
 Write-Host ''
-& node $launcher doctor
+& $nodeExe $launcher doctor
 if ($LASTEXITCODE -ne 0) { Write-Host '! td doctor encontrou pontos de atenção (veja acima). A instalação foi feita.' -ForegroundColor Yellow }
 
 if ($ClaudeCode) {
   Write-Host ''
-  & node $launcher claude install
+  & $nodeExe $launcher claude install
   if ($LASTEXITCODE -ne 0) { Write-Host '! não foi possível configurar o Claude Code agora. Rode depois: td claude install' -ForegroundColor Yellow }
 }
 

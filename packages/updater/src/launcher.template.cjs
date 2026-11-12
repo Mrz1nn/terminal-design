@@ -72,7 +72,9 @@ async function start() {
   }
   process.stderr.write('✗ Terminal-Design: nenhuma versão instalada pôde ser carregada.\n' +
     (problems.length ? '  ' + problems.join('\n  ') + '\n' : '  current.json ausente ou inválido.\n') +
-    '  Reinstale: powershell -ExecutionPolicy Bypass -File scripts\\install.ps1\n');
+    (process.platform === 'win32'
+      ? '  Reinstale: powershell -ExecutionPolicy Bypass -File scripts\\install.ps1\n'
+      : '  Reinstale: sh scripts/install.sh\n'));
   process.exitCode = 1;
 }
 

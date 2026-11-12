@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, readJsonForUpdate, writeJsonAtomic, backupFile, installMode, isPlainObject } from '../../packages/core/src/index.js';
+import { nodeCommand } from '../../packages/updater/src/launcher.js';
 
 const MARKER = 'terminal-design';
 const fwd = (p) => p.replace(/\\/g, '/');
@@ -18,11 +19,23 @@ function previousFile(paths) {
   return path.join(paths.dataHome, 'claude-code-previous.json');
 }
 
-/** Command Claude Code runs. Uses the stable launcher in managed installs. */
-export function statusCommand(paths, sub = false) {
-  const entry = installMode(paths) === 'managed' ? paths.launcher : path.join(paths.appRoot, 'bin', 'td.js');
+/**
+ * Command Claude Code runs.
+ * - Windows managed install: node (the private copy from get.ps1 when present) + the stable launcher.
+ * - macOS / Linux managed install: the bin/td shell shim, which finds node by itself.
+ *   Claude Code runs the command in a non-interactive shell that often lacks nvm/Homebrew in PATH,
+ *   so a bare `node` could fail there.
+ * - Dev (git clone): node + bin/td.js from the clone.
+ */
+export function statusCommand(paths, sub = false, platform = process.platform) {
+  const tail = `statusline${sub ? ' --subagent' : ''} --from=${MARKER}`;
+  if (installMode(paths) === 'managed') {
+    if (platform !== 'win32') return `"${fwd(path.join(paths.binDir, 'td'))}" ${tail}`;
+    const node = nodeCommand(paths, platform);
+    return `${node === 'node' ? 'node' : `"${fwd(node)}"`} "${fwd(paths.launcher)}" ${tail}`;
+  }
   // The --from marker lets us recognize our own entries without guessing from paths.
-  return `node "${fwd(entry)}" statusline${sub ? ' --subagent' : ''} --from=${MARKER}`;
+  return `node "${fwd(path.join(paths.appRoot, 'bin', 'td.js'))}" ${tail}`;
 }
 
 export function isOurs(entry) {

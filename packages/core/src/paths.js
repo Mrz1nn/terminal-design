@@ -51,6 +51,6 @@ export function getPaths() {
  * "dev": running from a git clone; `td update` tells the user to use git pull instead.
  */
 export function installMode(paths = getPaths()) {
-  const rel = path.relative(paths.versions, appRoot);
+  const rel = path.relative(paths.versions, paths.appRoot ?? appRoot);
   return rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? 'managed' : 'dev';
 }

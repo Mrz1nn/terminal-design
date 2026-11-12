@@ -16,7 +16,7 @@ export function powershellExe() {
 /** Pure: powershell.exe argument vector for a host run. */
 export function buildHostArgs({
   mode = 'listen', hotkey, trigger = 'push-to-talk', maxSeconds = 60, seconds = 5,
-  device = 'default', insertMode = 'type', outDir, cacheDir, overlay = true, tray = true,
+  device = 'default', insertMode = 'type', outDir, cacheDir, overlay = true, tray = true, button = true,
   script = HOST_SCRIPT,
 } = {}) {
   const args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-STA', '-File', script, '-Mode', mode];
@@ -27,6 +27,8 @@ export function buildHostArgs({
   if (cacheDir) args.push('-CacheDir', cacheDir);
   if (!overlay) args.push('-NoOverlay');
   if (!tray) args.push('-NoTray');
+  // The floating mic button only exists in listen mode; never pass it for record/devices runs.
+  if (!button || mode !== 'listen') args.push('-NoButton');
   return args;
 }
 

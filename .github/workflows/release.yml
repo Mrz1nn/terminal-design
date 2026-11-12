@@ -1,6 +1,6 @@
 # Publishes a GitHub Release when a tag like v1.2.3 (or v1.2.3-beta.1) is pushed.
 # Assets: terminal-design-<version>.zip + SHA256SUMS.txt, which `td update` downloads
-# and verifies.
+# and verifies. The same zip serves Windows, macOS and Linux.
 #
 # Third-party actions used (both MIT licensed, maintained by GitHub):
 #   actions/checkout, actions/setup-node
@@ -16,9 +16,28 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node --test
+
   release:
+    needs: test
     runs-on: windows-latest
     steps:
+      # Keep LF endings so the packed shell scripts run on macOS/Linux
+      # (pack-release.js also normalizes *.sh, this is belt and braces).
+      - name: Disable CRLF conversion
+        run: git config --global core.autocrlf false
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4

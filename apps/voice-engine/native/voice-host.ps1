@@ -21,7 +21,9 @@ param(
   [string]$OutDir = $env:TEMP,
   [string]$CacheDir = '',
   [switch]$NoOverlay,
-  [switch]$NoTray
+  [switch]$NoTray,
+  # No floating mic button (listen mode only). Its position is saved in button.json inside -CacheDir.
+  [switch]$NoButton
 )
 
 $ErrorActionPreference = 'Stop'
@@ -62,7 +64,8 @@ try {
 
 try {
   $code = [TerminalDesign.Voice.Host]::Run($Mode, [uint32]$Modifiers, [uint32]$Vk, $HotkeyLabel, $Trigger,
-    $MaxSeconds, $Seconds, $Device, $InsertMode, $OutDir, (-not $NoOverlay), (-not $NoTray))
+    $MaxSeconds, $Seconds, $Device, $InsertMode, $OutDir, (-not $NoOverlay), (-not $NoTray),
+    (-not $NoButton), $CacheDir)
   exit $code
 } catch {
   Write-HostEvent @{ event = 'error'; code = 'host'; message = $_.Exception.Message }

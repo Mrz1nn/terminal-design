@@ -31,6 +31,7 @@ export function resolveOptions({ config = {}, overrides = {}, vp = voicePaths() 
     prompt: v.prompt ?? null,
     overlay: v.overlay ?? true,
     tray: v.tray ?? true,
+    button: v.button ?? true,
     whisper,
     model,
     vp,
@@ -91,7 +92,7 @@ export async function recordOnce(opts, { seconds = 5, onRecording } = {}) {
   fs.mkdirSync(opts.vp.tmp, { recursive: true });
   const host = startHost({
     mode: 'record', seconds, device: opts.microphone, outDir: opts.vp.tmp, cacheDir: opts.vp.cache,
-    overlay: opts.overlay, tray: false,
+    overlay: opts.overlay, tray: false, button: false,
   });
   return new Promise((resolve, reject) => {
     let audio = null;
@@ -200,10 +201,11 @@ export function createEngine(opts, deps = {}) {
     host = d.startHost({
       mode: 'listen', hotkey: hk, trigger: opts.mode, maxSeconds: opts.maxSeconds, device: opts.microphone,
       insertMode: opts.insertMode, outDir: opts.vp.tmp, cacheDir: opts.vp.cache, overlay: opts.overlay, tray: opts.tray,
+      button: opts.button !== false,
     });
     let ready = false;
     host.on('ready', (m) => { ready = true; status('ready', m.device); resolve(m); });
-    host.on('recording', () => status('recording'));
+    host.on('recording', (m) => status('recording', m?.source));
     host.on('audio', (m) => { queue.push(m); processNext(); });
     host.on('cancelled', (m) => status('idle', m.reason === 'short' ? 'gravação muito curta, ignorada' : m.reason));
     host.on('typed', (m) => {

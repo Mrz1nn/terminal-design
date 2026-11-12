@@ -175,6 +175,11 @@ test('buildHostArgs: flags map to voice-host.ps1 parameters', () => {
   assert.equal(kv('-InsertMode'), 'paste');
   assert.ok(a.includes('-NoOverlay') && a.includes('-NoTray'));
   assert.equal(buildHostArgs({ mode: 'devices' }).includes('-Modifiers'), false);
+  // Mic button: on by default in listen mode, -NoButton when disabled, never in record/devices runs.
+  assert.equal(buildHostArgs({ mode: 'listen' }).includes('-NoButton'), false);
+  assert.equal(buildHostArgs({ mode: 'listen', button: false }).includes('-NoButton'), true);
+  assert.equal(buildHostArgs({ mode: 'record', button: true }).includes('-NoButton'), true);
+  assert.equal(buildHostArgs({ mode: 'devices' }).includes('-NoButton'), true);
 });
 
 // ---- assets / setup -------------------------------------------------------------
@@ -321,6 +326,9 @@ test('resolveOptions: config.voice merged with overrides; undefined overrides ig
   assert.equal(o.modelName, 'small');
   assert.equal(o.appendSpace, false);
   assert.equal(o.maxSeconds, 30);
+  assert.equal(o.button, true, 'button on by default');
+  assert.equal(resolveOptions({ config: { voice: { button: false } }, vp }).button, false);
+  assert.equal(resolveOptions({ config: { voice: { button: true } }, overrides: { button: false }, vp }).button, false);
   assert.equal(o.model.path, path.join(vp.modelsDir, 'ggml-small.bin'));
   fs.rmSync(vp.root, { recursive: true, force: true });
 });

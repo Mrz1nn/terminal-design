@@ -229,6 +229,87 @@ namespace TerminalDesign.Voice.Tests
               var l = new FakeEnv(); l.Down.Add(0x11); l.Down.Add(0x12); l.Down.Add(0xA4);
               Check("AltGr is told apart from left Ctrl+Alt", Typist.IsAltGr(e) && !Typist.IsAltGr(l), ""); }
 
+            // ---- R1 target choice for button / tray clicks ------------------------------
+            { var user = new IntPtr(100); var last = new IntPtr(300);
+              var btn = new IntPtr(901); var ovl = new IntPtr(902); var trayMenu = new IntPtr(903);
+              var own = new HashSet<IntPtr> { btn, ovl, trayMenu };
+              Check("target: foreground is the user's window (button never activates)",
+                  TargetPicker.ChooseTarget(user, last, own) == user, "");
+              Check("target: foreground is our button: falls back to last external window",
+                  TargetPicker.ChooseTarget(btn, last, own) == last, "");
+              Check("target: foreground is the overlay or tray menu: last external window",
+                  TargetPicker.ChooseTarget(ovl, last, own) == last && TargetPicker.ChooseTarget(trayMenu, last, own) == last, "");
+              Check("target: no foreground window: last external window",
+                  TargetPicker.ChooseTarget(IntPtr.Zero, last, own) == last, "");
+              Check("target: ours and no external window known: no-target (zero)",
+                  TargetPicker.ChooseTarget(btn, IntPtr.Zero, own) == IntPtr.Zero
+                  && TargetPicker.ChooseTarget(IntPtr.Zero, IntPtr.Zero, own) == IntPtr.Zero, "");
+              Check("target: a stale last external that is ours is never used",
+                  TargetPicker.ChooseTarget(btn, ovl, own) == IntPtr.Zero, "");
+              Check("target: taskbar classes are recognized (tray click focuses the taskbar)",
+                  TargetPicker.IsShellTrayClass("Shell_TrayWnd") && TargetPicker.IsShellTrayClass("NotifyIconOverflowWindow")
+                  && !TargetPicker.IsShellTrayClass("CASCADIA_HOSTING_WINDOW_CLASS") && !TargetPicker.IsShellTrayClass(null), "");
+              var p = new PendingTargets(); IntPtr t;
+              p.Add(7, TargetPicker.ChooseTarget(btn, IntPtr.Zero, own));
+              var e = new FakeEnv { Fg = btn };
+              var r = p.Take(7, out t) ? Typist.Insert("oi", "type", t, 0x78, e, 30) : null;
+              Check("button click with no external window: insertion blocked as no-target, nothing typed",
+                  r != null && r.Outcome == "blocked" && r.Reason == "no-target" && e.Sent.Count == 0, r == null ? "no pending" : Describe(r, e)); }
+
+            // ---- start/stop controller ----------------------------------------------
+            { var c = new RecordController("push-to-talk");
+              bool a = c.Click(1000) == RecAction.Start; c.Started("button", 1000);
+              bool b = c.Click(1100) == RecAction.None;          // second click of a double click
+              bool d = c.Click(3000) == RecAction.Stop; c.BeginStop();
+              bool f = c.Click(3010) == RecAction.None;          // click while stopping
+              c.Stopped(3050);
+              bool g = c.Click(3100) == RecAction.None;          // just after the stop
+              bool h = c.Click(4000) == RecAction.Start;
+              Check("click: start, double click ignored, stop, clicks during and right after stop ignored, start again",
+                  a && b && d && f && g && h, "" + a + b + d + f + g + h); }
+
+            { var c = new RecordController("push-to-talk");
+              c.Started("button", 0);
+              Check("push-to-talk: hotkey release does not stop a button recording",
+                  c.HotkeyReleased() == RecAction.None && c.HotkeyDown() == RecAction.None, "");
+              Check("push-to-talk: a click stops a button recording", c.Click(5000) == RecAction.Stop, ""); }
+
+            { var c = new RecordController("push-to-talk");
+              bool a = c.HotkeyDown() == RecAction.Start; c.Started("hotkey", 0);
+              bool b = c.HotkeyReleased() == RecAction.Stop;
+              bool d = c.Click(5000) == RecAction.Stop;          // a click also stops a hotkey recording
+              Check("push-to-talk: hotkey down starts, release stops; click stops too", a && b && d, "" + a + b + d); }
+
+            { var c = new RecordController("toggle");
+              bool a = c.HotkeyDown() == RecAction.Start; c.Started("hotkey", 0);
+              bool b = c.HotkeyReleased() == RecAction.None;
+              bool d = c.HotkeyDown() == RecAction.Stop;
+              c.BeginStop(); bool f = c.HotkeyDown() == RecAction.None; c.Stopped(10);
+              c.Started("button", 2000); bool g = c.HotkeyDown() == RecAction.Stop;
+              Check("toggle: hotkey starts and stops, release ignored, ignored while stopping, stops a button recording",
+                  a && b && d && f && g, "" + a + b + d + f + g); }
+
+            { var c = new RecordController("toggle");
+              c.Started("hotkey", 0); c.BeginStop(); c.Stopped(100);
+              Check("hotkey is not delayed by the click guard", c.HotkeyDown() == RecAction.Start, ""); }
+
+            { var c = new RecordController("push-to-talk");
+              c.StartFailed();
+              Check("failed start returns to idle", c.State == "idle" && c.Click(10000) == RecAction.Start, ""); }
+
+            // ---- button position persistence -----------------------------------------
+            { var screen = new System.Drawing.Rectangle(0, 0, 1920, 1040);
+              var second = new System.Drawing.Rectangle(1920, 0, 1280, 1000);
+              var areas = new[] { screen, second };
+              var pos = MicButton.ParsePosition(MicButton.FormatPosition(new System.Drawing.Point(2000, 500)));
+              Check("button position round-trips through button.json", pos.HasValue && pos.Value.X == 2000 && pos.Value.Y == 500, "");
+              Check("saved position on a screen is kept", MicButton.ResolvePosition(pos, areas, screen) == new System.Drawing.Point(2000, 500), "");
+              var off = MicButton.ResolvePosition(new System.Drawing.Point(5000, 5000), areas, screen);
+              Check("off-screen position (monitor unplugged) falls back to bottom right",
+                  screen.Contains(new System.Drawing.Rectangle(off, new System.Drawing.Size(MicButton.Diameter, MicButton.Diameter))), off.ToString());
+              Check("invalid button.json is ignored",
+                  MicButton.ParsePosition("{oops") == null && MicButton.ParsePosition("{\"x\":1}") == null && MicButton.ParsePosition("") == null, ""); }
+
             // ASCII-only output (\uXXXX) so the console code page can never corrupt the JSON.
             string json = new JavaScriptSerializer().Serialize(results);
             var sb = new StringBuilder(json.Length);

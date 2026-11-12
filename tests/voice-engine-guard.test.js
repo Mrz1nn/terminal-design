@@ -46,7 +46,7 @@ function setup({ transcript = 'olá mundo', fail = null } = {}) {
   });
   const events = [];
   for (const e of ['blocked', 'copied', 'transcript', 'fail', 'warn']) engine.on(e, (m) => events.push([e, m]));
-  return { engine, host, vp, events, transcribed };
+  return { engine, host, vp, events, transcribed, engineOpts: opts };
 }
 
 async function started(s) {
@@ -185,4 +185,56 @@ test('R3: Ctrl+Alt + typing key warns about AltGr; F-keys and Win combos do not'
   assert.equal(hotkeyWarnings(parseHotkey('Ctrl+Alt+F5')).length, 0);
   assert.equal(hotkeyWarnings(parseHotkey('Ctrl+Alt+Win+Space')).length, 0);
   assert.equal(hotkeyWarnings(parseHotkey('Ctrl+Shift+Space')).length, 0);
+});
+
+// ---- mic button (click to talk) ---------------------------------------------------
+
+test('engine starts the host with the button on by default and off with button:false', async () => {
+  for (const [button, expected] of [[undefined, true], [true, true], [false, false]]) {
+    const s = setup();
+    let hostOpts = null;
+    const engine = createEngine({ ...s.engineOpts, button }, {
+      startHost: (o) => { hostOpts = o; return s.host; },
+      assertReady: () => {},
+      transcribeFile: async () => ({ text: 'x', ms: 1 }),
+    });
+    const p = engine.start();
+    s.host.emit('ready', { device: 'mic', button: expected });
+    const ready = await p;
+    assert.equal(hostOpts.button, expected, `button=${button}`);
+    assert.equal(ready.button, expected);
+  }
+});
+
+test('a recording started by the button reports its source in the status', async () => {
+  const s = setup();
+  const statuses = [];
+  s.engine.on('status', (st) => statuses.push(st));
+  await started(s);
+  s.host.emit('recording', { device: 'mic', source: 'button', target: true });
+  assert.deepEqual(statuses.at(-1), { state: 'recording', message: 'button' });
+});
+
+test('audio stopped by a button click (reason "button") follows the same single-insertion path', async () => {
+  const s = setup();
+  await started(s);
+  const file = path.join(s.vp.tmp, 'td-voice-1-5.wav');
+  fs.mkdirSync(s.vp.tmp, { recursive: true });
+  fs.writeFileSync(file, 'RIFF');
+  s.host.emit('audio', { id: 5, path: file, durationMs: 1200, peak: 4000, reason: 'button', source: 'button' });
+  await tick();
+  assert.deepEqual(types(s), [{ cmd: 'type', id: 5, text: 'olá mundo ', insertMode: 'type' }]);
+  assert.equal(fs.existsSync(file), false, 'WAV deleted');
+  s.host.emit('blocked', { id: 5, outcome: 'blocked', reason: 'no-target', keys: '', chars: 0, requested: 10 });
+  await tick();
+  const blocked = s.events.find(([e]) => e === 'blocked');
+  assert.ok(blocked, 'no-target is reported as blocked');
+  assert.equal(blocked[1].text, 'olá mundo ');
+  assert.equal(types(s).length, 1, 'never re-sent');
+});
+
+test('protocol: recording/audio with source and ready with button parse as known events', () => {
+  assert.equal(parseLine('{"event":"recording","device":"m","source":"tray","target":false}').source, 'tray');
+  assert.equal(parseLine('{"event":"audio","id":1,"path":"p","reason":"button","source":"button"}').reason, 'button');
+  assert.equal(parseLine('{"event":"ready","hotkey":"Ctrl+Shift+F9","button":true}').button, true);
 });

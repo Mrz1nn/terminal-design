@@ -17,6 +17,15 @@ O `td claude install` altera **somente** duas chaves oficiais do `~/.claude/sett
 }
 ```
 
+No Mac (e no Linux), o comando registrado é o atalho `"~/.local/share/terminal-design/bin/td" statusline --from=terminal-design`. O Claude Code roda a status line num shell sem o seu perfil, e por isso muitas vezes não enxerga o Node.js instalado pelo Homebrew, nvm ou Volta. O atalho resolve isso procurando o Node.js nesta ordem:
+
+1. a variável `TD_NODE`;
+2. o Node.js usado na instalação;
+3. o PATH;
+4. o Homebrew (`/opt/homebrew/bin` e `/usr/local/bin`);
+5. o Volta;
+6. o nvm.
+
 O que ele garante:
 
 - Faz backup do `settings.json` em `%LOCALAPPDATA%\TerminalDesign\backups` antes de qualquer mudança.
@@ -49,7 +58,7 @@ td config set cockpit.hide '["cost"]'
 | `context` | Barra, %, tokens usados / tamanho da janela | `context_window` |
 | `limit5h`, `limit7d` | Barra, %, tempo até a renovação | `rate_limits.five_hour` / `seven_day` |
 | `spend` | Limite de gasto e período | `rate_limits.spend_limit` (só gateway) |
-| `monthly` | Sempre `n/d`: o Claude Code não informa limite mensal de assinatura | — |
+| `monthly` | Sempre `n/d`: o Claude Code não informa limite mensal de assinatura | não existe |
 | `dir` | Projeto e subpasta | `workspace` |
 | `git` | Branch, staged, modificados, não rastreados, conflitos, ahead/behind | `git status` local |
 | `pr` | Número e estado do PR, com link clicável | `pr` |

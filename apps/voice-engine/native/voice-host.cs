@@ -48,6 +48,17 @@ namespace TerminalDesign.Voice
         public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
         [DllImport("user32.dll")]
         public static extern bool DestroyIcon(IntPtr hIcon);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        public static extern int GetClassName(IntPtr hWnd, StringBuilder name, int max);
+
+        // Foreground tracking (EVENT_SYSTEM_FOREGROUND, out of context: callback runs on our UI thread).
+        public const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
+        public const uint WINEVENT_OUTOFCONTEXT = 0x0000;
+        public delegate void WinEventProc(IntPtr hook, uint evt, IntPtr hwnd, int idObject, int idChild, uint thread, uint time);
+        [DllImport("user32.dll")]
+        public static extern IntPtr SetWinEventHook(uint min, uint max, IntPtr module, WinEventProc proc, uint pid, uint tid, uint flags);
+        [DllImport("user32.dll")]
+        public static extern bool UnhookWinEvent(IntPtr hook);
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
         [DllImport("kernel32.dll")]
@@ -401,6 +412,85 @@ namespace TerminalDesign.Voice
     }
 
     /// <summary>
+    /// R1 target choice when a recording starts. The mic button never activates, so the foreground
+    /// window is normally still the user's window. When the foreground is one of our own windows
+    /// (button, overlay, menus), the taskbar (tray click) or nothing, fall back to the last
+    /// foreground window that was not ignored. Zero means "no target": the insertion will be
+    /// blocked with reason no-target and the text kept for manual copy.
+    /// </summary>
+    internal static class TargetPicker
+    {
+        static readonly string[] ShellTrayClasses =
+        {
+            "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "NotifyIconOverflowWindow", "TopLevelWindowForOverflowXamlIsland",
+        };
+
+        public static IntPtr ChooseTarget(IntPtr currentFg, IntPtr lastExternalFg, Predicate<IntPtr> ignored)
+        {
+            if (currentFg != IntPtr.Zero && !ignored(currentFg)) return currentFg;
+            if (lastExternalFg != IntPtr.Zero && !ignored(lastExternalFg)) return lastExternalFg;
+            return IntPtr.Zero;
+        }
+
+        public static IntPtr ChooseTarget(IntPtr currentFg, IntPtr lastExternalFg, ICollection<IntPtr> ownHandles)
+        {
+            return ChooseTarget(currentFg, lastExternalFg, h => ownHandles.Contains(h));
+        }
+
+        /// <summary>Taskbar / notification area windows: clicking the tray icon focuses these.</summary>
+        public static bool IsShellTrayClass(string className)
+        {
+            return className != null && Array.IndexOf(ShellTrayClasses, className) >= 0;
+        }
+    }
+
+    internal enum RecAction { None, Start, Stop }
+
+    /// <summary>
+    /// Pure start/stop decisions shared by the hotkey, the mic button and the tray icon, so all of
+    /// them go through the same StartRecording/StopRecording path.
+    ///  - click (button or tray): toggles, whatever voice.mode is;
+    ///  - hotkey down: starts when idle; stops only in toggle mode;
+    ///  - hotkey release: stops only a push-to-talk recording that the hotkey started;
+    ///  - clicks are ignored while a stop is in progress, right after a start and right after a
+    ///    stop (ClickGuardMs), so a double click never produces start+stop or stop+start.
+    /// </summary>
+    internal sealed class RecordController
+    {
+        public const long ClickGuardMs = 400;
+        readonly string trigger;
+        public string State = "idle";   // idle | recording | stopping
+        public string Source;           // hotkey | button | tray (while recording)
+        long startedAt = long.MinValue / 2, stoppedAt = long.MinValue / 2;
+
+        public RecordController(string trigger) { this.trigger = trigger; }
+
+        public RecAction Click(long nowMs)
+        {
+            if (State == "stopping") return RecAction.None;
+            if (State == "recording") return nowMs - startedAt < ClickGuardMs ? RecAction.None : RecAction.Stop;
+            return nowMs - stoppedAt < ClickGuardMs ? RecAction.None : RecAction.Start;
+        }
+
+        public RecAction HotkeyDown()
+        {
+            if (State == "idle") return RecAction.Start;
+            if (State == "recording" && trigger == "toggle") return RecAction.Stop;
+            return RecAction.None;
+        }
+
+        public RecAction HotkeyReleased()
+        {
+            return State == "recording" && trigger == "push-to-talk" && Source == "hotkey" ? RecAction.Stop : RecAction.None;
+        }
+
+        public void Started(string source, long nowMs) { State = "recording"; Source = source; startedAt = nowMs; }
+        public void StartFailed() { State = "idle"; Source = null; }
+        public void BeginStop() { State = "stopping"; }
+        public void Stopped(long nowMs) { State = "idle"; Source = null; stoppedAt = nowMs; }
+    }
+
+    /// <summary>
     /// Safe text insertion. Rules:
     ///  R1  text goes only to the window that had focus when recording started; if focus moved
     ///      (before or while typing) nothing more is typed.
@@ -689,6 +779,186 @@ namespace TerminalDesign.Voice
         }
     }
 
+    /// <summary>
+    /// Floating round mic button. It never activates (WS_EX_NOACTIVATE, MA_NOACTIVATE on
+    /// WM_MOUSEACTIVATE), so clicking it leaves keyboard focus in the user's window, which is
+    /// what R1 captures as the insertion target. Left click toggles recording, drag moves it,
+    /// right click opens the menu.
+    /// </summary>
+    internal sealed class MicButton : Form
+    {
+        const int WM_MOUSEACTIVATE = 0x0021;
+        const int MA_NOACTIVATE = 3;
+        const int DragThreshold = 4;
+        public const int Diameter = 44;
+
+        public event Action Clicked;
+        public event Action<Point> Moved;
+        public ContextMenuStrip PopupMenu;
+        readonly ToolTip tip = new ToolTip { InitialDelay = 400, ShowAlways = true };
+
+        string state = "idle";
+        double elapsed, limit = 60;
+        Point downScreen, downLocation;
+        bool pressed, dragging;
+
+        static readonly Color Gray = Color.FromArgb(90, 90, 104);
+        static readonly Color Red = Color.FromArgb(220, 60, 60);
+        static readonly Color Amber = Color.FromArgb(222, 160, 40);
+
+        public MicButton()
+        {
+            FormBorderStyle = FormBorderStyle.None;
+            ShowInTaskbar = false;
+            TopMost = true;
+            StartPosition = FormStartPosition.Manual;
+            Size = new Size(Diameter, Diameter);
+            BackColor = Color.Magenta;
+            TransparencyKey = Color.Magenta; // only the circle is visible and clickable
+            DoubleBuffered = true;
+            Cursor = Cursors.Hand;
+            using (var path = new System.Drawing.Drawing2D.GraphicsPath())
+            {
+                path.AddEllipse(0, 0, Diameter, Diameter);
+                Region = new Region(path);
+            }
+        }
+
+        protected override bool ShowWithoutActivation { get { return true; } }
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                var cp = base.CreateParams;
+                cp.ExStyle |= 0x08000000 /* WS_EX_NOACTIVATE */ | 0x00000080 /* WS_EX_TOOLWINDOW */ | 0x00000008 /* WS_EX_TOPMOST */;
+                return cp;
+            }
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            // Clicking must not make this window the foreground window.
+            if (m.Msg == WM_MOUSEACTIVATE) { m.Result = (IntPtr)MA_NOACTIVATE; return; }
+            base.WndProc(ref m);
+        }
+
+        public void SetState(string s, string tooltip)
+        {
+            state = s;
+            if (s != "recording") elapsed = 0;
+            tip.SetToolTip(this, tooltip);
+            Invalidate();
+        }
+
+        public void SetElapsed(double seconds, double maxSeconds)
+        {
+            elapsed = seconds;
+            limit = Math.Max(1, maxSeconds);
+            Invalidate();
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                pressed = true;
+                dragging = false;
+                downScreen = Control.MousePosition;
+                downLocation = Location;
+                Capture = true;
+            }
+            base.OnMouseDown(e);
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            if (pressed)
+            {
+                var p = Control.MousePosition;
+                int dx = p.X - downScreen.X, dy = p.Y - downScreen.Y;
+                if (!dragging && (Math.Abs(dx) > DragThreshold || Math.Abs(dy) > DragThreshold)) dragging = true;
+                if (dragging) Location = new Point(downLocation.X + dx, downLocation.Y + dy);
+            }
+            base.OnMouseMove(e);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left && pressed)
+            {
+                pressed = false;
+                Capture = false;
+                if (dragging) { if (Moved != null) Moved(Location); }
+                else if (Clicked != null) Clicked();
+            }
+            else if (e.Button == MouseButtons.Right && PopupMenu != null)
+            {
+                PopupMenu.Show(this, e.Location);
+            }
+            base.OnMouseUp(e);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            Color fill = state == "recording" ? Red : state == "processing" || state == "blocked" ? Amber : Gray;
+            using (var b = new SolidBrush(fill)) g.FillEllipse(b, 1, 1, Diameter - 2, Diameter - 2);
+
+            if (state == "recording")
+            {
+                // Elapsed-time ring (fraction of maxSeconds) plus a soft pulse once per second.
+                float frac = (float)Math.Min(1.0, elapsed / limit);
+                using (var ring = new Pen(Color.White, 3f)) g.DrawArc(ring, 3, 3, Diameter - 7, Diameter - 7, -90, Math.Max(4f, 360f * frac));
+                int alpha = (int)(70 + 60 * Math.Abs(Math.Sin(elapsed * Math.PI)));
+                using (var pulse = new Pen(Color.FromArgb(alpha, Color.White), 1.5f)) g.DrawEllipse(pulse, 7, 7, Diameter - 15, Diameter - 15);
+            }
+
+            // Microphone glyph: capsule, cradle arc and stand.
+            using (var w = new SolidBrush(Color.White))
+            using (var pen = new Pen(Color.White, 2f))
+            using (var capsule = new System.Drawing.Drawing2D.GraphicsPath())
+            {
+                float cx = Diameter / 2f, top = 11, cw = 8, ch = 14;
+                capsule.AddArc(cx - cw / 2, top, cw, cw, 180, 180);
+                capsule.AddArc(cx - cw / 2, top + ch - cw, cw, cw, 0, 180);
+                capsule.CloseFigure();
+                g.FillPath(w, capsule);
+                g.DrawArc(pen, cx - 8, top + 4, 16, 14, 0, 180);
+                g.DrawLine(pen, cx, top + 18, cx, top + 22);
+                g.DrawLine(pen, cx - 4, top + 22, cx + 4, top + 22);
+            }
+        }
+
+        /// <summary>Saved position if it is still on a screen, otherwise bottom right of the primary screen.</summary>
+        public static Point ResolvePosition(Point? saved, Rectangle[] workAreas, Rectangle primary)
+        {
+            if (saved.HasValue)
+            {
+                var r = new Rectangle(saved.Value, new Size(Diameter, Diameter));
+                foreach (var a in workAreas) if (a.Contains(r)) return saved.Value;
+            }
+            return new Point(primary.Right - Diameter - 24, primary.Bottom - Diameter - 96);
+        }
+
+        /// <summary>Parse {"x":N,"y":N}; null when missing or invalid.</summary>
+        public static Point? ParsePosition(string json)
+        {
+            if (string.IsNullOrEmpty(json)) return null;
+            var d = Protocol.Parse(json);
+            if (d == null || !d.ContainsKey("x") || !d.ContainsKey("y")) return null;
+            try { return new Point(Convert.ToInt32(d["x"]), Convert.ToInt32(d["y"])); }
+            catch { return null; }
+        }
+
+        public static string FormatPosition(Point p)
+        {
+            return "{\"x\":" + p.X.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + ",\"y\":" + p.Y.ToString(System.Globalization.CultureInfo.InvariantCulture) + "}\n";
+        }
+    }
+
     /// <summary>Hidden window: receives WM_HOTKEY and is the UI-thread marshal target.</summary>
     internal sealed class MessageWindow : Form
     {
@@ -706,9 +976,20 @@ namespace TerminalDesign.Voice
         static string mode, trigger, insertMode, outDir, deviceSpec, hotkeyLabel;
         static uint modifiers, vk;
         static int maxSeconds, seconds;
-        static bool useOverlay, useTray;
+        static bool useOverlay, useTray, useButton;
+        static string stateDir;
 
         static MessageWindow win;
+        static MicButton button;
+        static MenuItem showButtonItem;
+        static ToolStripMenuItem buttonCopyItem;
+        static RecordController ctrl;
+        // Last foreground window that was not ours nor the taskbar (fallback target for clicks).
+        static IntPtr lastExternalFg;
+        static IntPtr fgHook;
+        static Native.WinEventProc fgProc; // kept in a field so the GC never collects the callback
+        static readonly uint ownPid = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
+        static readonly System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
         static Overlay overlay;
         static NotifyIcon tray;
         static System.Windows.Forms.Timer poll, flash;
@@ -733,11 +1014,14 @@ namespace TerminalDesign.Voice
         static readonly Color Gray = Color.FromArgb(150, 150, 160);
 
         public static int Run(string mode_, uint modifiers_, uint vk_, string hotkeyLabel_, string trigger_,
-            int maxSeconds_, int seconds_, string device_, string insertMode_, string outDir_, bool overlay_, bool tray_)
+            int maxSeconds_, int seconds_, string device_, string insertMode_, string outDir_, bool overlay_, bool tray_,
+            bool button_, string stateDir_)
         {
             mode = mode_; modifiers = modifiers_; vk = vk_; hotkeyLabel = hotkeyLabel_; trigger = trigger_;
             maxSeconds = Math.Max(1, maxSeconds_); seconds = Math.Max(1, seconds_); deviceSpec = device_;
             insertMode = insertMode_; outDir = outDir_; useOverlay = overlay_; useTray = tray_;
+            useButton = button_ && mode == "listen"; stateDir = stateDir_;
+            ctrl = new RecordController(trigger);
             Protocol.Init();
 
             if (mode == "devices")
@@ -772,14 +1056,16 @@ namespace TerminalDesign.Voice
                     return 3;
                 }
                 win.Hotkey += OnHotkey;
+                StartForegroundTracking();
+                if (useButton) SetupButton();
                 SetState("idle", null);
-                Protocol.Emit("ready", "hotkey", hotkeyLabel, "mode", trigger, "device", deviceLabel);
+                Protocol.Emit("ready", "hotkey", hotkeyLabel, "mode", trigger, "device", deviceLabel, "button", useButton);
             }
 
             StartStdinReader();
             if (mode == "record")
             {
-                win.BeginInvoke((Action)delegate { StartRecording(); });
+                win.BeginInvoke((Action)delegate { StartRecording("test"); });
             }
             Application.Run();
             Shutdown();
@@ -790,6 +1076,8 @@ namespace TerminalDesign.Voice
         {
             try { Native.UnregisterHotKey(win.Handle, 1); } catch { }
             if (recorder != null) { try { recorder.Stop(); } catch { } recorder = null; }
+            if (fgHook != IntPtr.Zero) { Native.UnhookWinEvent(fgHook); fgHook = IntPtr.Zero; }
+            if (button != null) { try { button.Close(); button.Dispose(); } catch { } button = null; }
             if (tray != null) { tray.Visible = false; tray.Dispose(); tray = null; }
             foreach (var ic in icons.Values) { try { Native.DestroyIcon(ic.Handle); } catch { } }
             icons.Clear();
@@ -859,13 +1147,13 @@ namespace TerminalDesign.Voice
                 if (r.Outcome == "typed")
                 {
                     lastText = null;
-                    if (copyItem != null) copyItem.Enabled = false;
+                    SetCopyEnabled(false);
                     Protocol.Emit("typed", "id", id, "chars", r.Chars, "requested", r.Requested, "insertMode", r.Mode);
                     SetState("idle", null);
                     return;
                 }
                 // Blocked or interrupted: keep the text for manual copy and say why.
-                if (copyItem != null) copyItem.Enabled = true;
+                SetCopyEnabled(true);
                 Protocol.Emit("blocked", "id", id, "outcome", r.Outcome, "reason", r.Reason ?? "error", "keys", r.Keys ?? "",
                     "chars", r.Chars, "requested", r.Requested);
                 SetState("blocked", BlockedMessage(r));
@@ -911,26 +1199,115 @@ namespace TerminalDesign.Voice
             }
             // Releasing Alt/Win after a hotkey would otherwise pop the menu bar / Start menu.
             if ((modifiers & 0x9) != 0) Typist.MaskMenuKey(env);
-            if (recorder == null) StartRecording();
-            else if (trigger == "toggle") StopRecording("hotkey");
+            Apply(ctrl.HotkeyDown(), "hotkey", "hotkey");
         }
 
-        static void StartRecording()
+        /// <summary>Mic button or tray icon left click: toggles, whatever voice.mode is.</summary>
+        static void OnClick(string source)
+        {
+            Apply(ctrl.Click(clock.ElapsedMilliseconds), source, source);
+        }
+
+        static void Apply(RecAction action, string source, string stopReason)
+        {
+            if (action == RecAction.Start) StartRecording(source);
+            else if (action == RecAction.Stop) StopRecording(stopReason);
+        }
+
+        /// <summary>Ours (button, overlay, menus, tooltips) or the taskbar: never an insertion target.</summary>
+        static bool IsIgnoredWindow(IntPtr h)
+        {
+            if (h == IntPtr.Zero) return true;
+            uint pid;
+            Native.GetWindowThreadProcessId(h, out pid);
+            if (pid == ownPid) return true;
+            var sb = new StringBuilder(64);
+            Native.GetClassName(h, sb, sb.Capacity);
+            return TargetPicker.IsShellTrayClass(sb.ToString());
+        }
+
+        static void StartForegroundTracking()
+        {
+            IntPtr fg = env.Foreground();
+            if (!IsIgnoredWindow(fg)) lastExternalFg = fg;
+            fgProc = delegate (IntPtr hook, uint evt, IntPtr hwnd, int idObject, int idChild, uint thread, uint time)
+            {
+                if (!IsIgnoredWindow(hwnd)) lastExternalFg = hwnd;
+            };
+            fgHook = Native.SetWinEventHook(Native.EVENT_SYSTEM_FOREGROUND, Native.EVENT_SYSTEM_FOREGROUND,
+                IntPtr.Zero, fgProc, 0, 0, Native.WINEVENT_OUTOFCONTEXT);
+        }
+
+        static string ButtonFile() { return string.IsNullOrEmpty(stateDir) ? null : Path.Combine(stateDir, "button.json"); }
+
+        static void SetupButton()
+        {
+            button = new MicButton();
+            Point? saved = null;
+            try { string f = ButtonFile(); if (f != null && File.Exists(f)) saved = MicButton.ParsePosition(File.ReadAllText(f)); } catch { }
+            var areas = new List<Rectangle>();
+            foreach (var s in Screen.AllScreens) areas.Add(s.WorkingArea);
+            button.Location = MicButton.ResolvePosition(saved, areas.ToArray(), Screen.PrimaryScreen.WorkingArea);
+            button.Clicked += delegate { OnClick("button"); };
+            button.Moved += delegate (Point p)
+            {
+                try
+                {
+                    string f = ButtonFile();
+                    if (f == null) return;
+                    Directory.CreateDirectory(stateDir);
+                    File.WriteAllText(f, MicButton.FormatPosition(p));
+                }
+                catch { /* position is a convenience only */ }
+            };
+            var menu = new ContextMenuStrip();
+            buttonCopyItem = new ToolStripMenuItem("Copiar última transcrição não inserida", null, delegate { CopyLast(); }) { Enabled = false };
+            menu.Items.Add(buttonCopyItem);
+            menu.Items.Add("Esconder botão", null, delegate { ShowButton(false); });
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("Sair", null, delegate
+            {
+                Protocol.Emit("quit", "reason", "button");
+                Application.ExitThread();
+            });
+            button.PopupMenu = menu;
+            ShowButton(true);
+        }
+
+        static void ShowButton(bool show)
+        {
+            if (button == null) return;
+            if (show) button.Show(); else button.Hide();
+            if (showButtonItem != null) showButtonItem.Enabled = !show;
+        }
+
+        static void SetCopyEnabled(bool on)
+        {
+            if (copyItem != null) copyItem.Enabled = on;
+            if (buttonCopyItem != null) buttonCopyItem.Enabled = on;
+        }
+
+        static void StartRecording(string source)
         {
             recorder = new Recorder();
             try { recorder.Start(device); }
             catch (Exception e)
             {
                 recorder = null;
+                ctrl.StartFailed();
                 Protocol.Emit("error", "code", "mic", "message", e.Message);
                 SetState("error", e.Message);
                 if (mode == "record") Application.ExitThread();
                 return;
             }
             recStart = DateTime.UtcNow;
-            recTarget = env.Foreground(); // R1: text may only go back to this window
+            ctrl.Started(source, clock.ElapsedMilliseconds);
+            // R1: text may only go back to this window. A click on our button keeps the user's
+            // window in the foreground; anything of ours or the taskbar falls back to the last
+            // external foreground window; zero means the insertion will be blocked (no-target).
+            recTarget = TargetPicker.ChooseTarget(env.Foreground(), lastExternalFg, IsIgnoredWindow);
             SetState("recording", null);
-            Protocol.Emit("recording", "device", deviceLabel);
+            Protocol.Emit("recording", "device", deviceLabel, "source", source, "target", recTarget != IntPtr.Zero);
             poll.Start();
         }
 
@@ -940,14 +1317,16 @@ namespace TerminalDesign.Voice
             double elapsed = (DateTime.UtcNow - recStart).TotalSeconds;
             int limit = mode == "record" ? seconds : maxSeconds;
             if (elapsed >= limit) { StopRecording(mode == "record" ? "done" : "max"); return; }
-            if (mode == "listen" && trigger == "push-to-talk" && (Native.GetAsyncKeyState((int)vk) & 0x8000) == 0)
+            if (mode == "listen" && !env.IsDown((int)vk) && ctrl.HotkeyReleased() == RecAction.Stop)
             {
                 StopRecording("release");
                 return;
             }
+            if (button != null) button.SetElapsed(elapsed, limit);
             if (overlay != null)
             {
                 string hint = mode == "record" ? "teste: " + (int)Math.Ceiling(limit - elapsed) + "s"
+                    : ctrl.Source == "button" || ctrl.Source == "tray" ? "clique de novo para parar"
                     : trigger == "toggle" ? "atalho de novo para parar" : "solte para parar";
                 overlay.ShowText("● Gravando " + (int)elapsed + "s  ·  " + hint, Red);
             }
@@ -959,6 +1338,14 @@ namespace TerminalDesign.Voice
             var rec = recorder;
             recorder = null;
             if (rec == null) return;
+            string source = ctrl.Source;
+            ctrl.BeginStop();
+            try { FinishRecording(rec, reason, source); }
+            finally { ctrl.Stopped(clock.ElapsedMilliseconds); }
+        }
+
+        static void FinishRecording(Recorder rec, string reason, string source)
+        {
             byte[] data = rec.Stop();
             int ms = data.Length * 1000 / (Recorder.Rate * 2);
             if (rec.Error != null) Protocol.Emit("error", "code", "mic", "message", rec.Error);
@@ -980,7 +1367,7 @@ namespace TerminalDesign.Voice
             }
             if (mode == "listen") pending.Add(id, recTarget);
             SetState("processing", null);
-            Protocol.Emit("audio", "id", id, "path", path, "durationMs", ms, "peak", rec.Peak, "reason", reason);
+            Protocol.Emit("audio", "id", id, "path", path, "durationMs", ms, "peak", rec.Peak, "reason", reason, "source", source ?? "");
             if (mode == "record") Application.ExitThread();
         }
 
@@ -1014,7 +1401,19 @@ namespace TerminalDesign.Voice
                 Protocol.Emit("quit", "reason", "tray");
                 Application.ExitThread();
             });
+            showButtonItem = new MenuItem("Mostrar botão do microfone", delegate { ShowButton(true); }) { Enabled = false };
+            menu.MenuItems.Add(1, showButtonItem);
             tray.ContextMenu = menu;
+            // Left click on the tray icon toggles recording, like the mic button.
+            tray.MouseClick += delegate (object sender, MouseEventArgs e) { if (e.Button == MouseButtons.Left) OnClick("tray"); };
+        }
+
+        static string ButtonTip(string state)
+        {
+            if (state == "recording") return "Gravando: clique para parar";
+            if (state == "processing") return "Transcrevendo…";
+            if (state == "blocked") return "texto guardado, clique com o botão direito para copiar";
+            return "Clique para falar (ou " + hotkeyLabel + ")";
         }
 
         static string Clip(string s, int max) { return s.Length <= max ? s : s.Substring(0, max - 1) + "…"; }
@@ -1033,6 +1432,7 @@ namespace TerminalDesign.Voice
                 tray.Icon = Dot(state == "error" ? "error" : state, c);
                 tray.Text = Clip("TD " + tip, 63); // NotifyIcon.Text throws above 63 chars
             }
+            if (button != null) button.SetState(state == "error" ? "idle" : state, ButtonTip(state));
             if (overlay == null) return;
             if (flash != null) { flash.Stop(); flash.Dispose(); flash = null; }
             if (state == "processing") overlay.ShowText("◌ Transcrevendo…", Amber);

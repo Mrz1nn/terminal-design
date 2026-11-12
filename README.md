@@ -1,6 +1,6 @@
 # Terminal-Design
 
-Um cockpit para o terminal do Windows. Ele mostra uma status line organizada no Claude Code, traz 10 temas de cores, digita por voz sem internet e se atualiza com um único comando.
+Um cockpit para o terminal do Windows e do Mac. Ele mostra uma status line organizada no Claude Code, traz 10 temas de cores, digita por voz sem internet (no Windows) e se atualiza com um único comando.
 
 Gratuito, open source (licença MIT), sem assinatura, sem API paga e sem telemetria.
 
@@ -34,23 +34,85 @@ meu-projeto │ ⎇ main +2 ~3 ?1 ↑1 │ +128 −42 │ $1.23 est. │ ⏱ 31m
 |---|---|
 | Status line | Mostra no Claude Code o modelo, o esforço, o uso do contexto, os limites de 5 horas e de 7 dias com o tempo até renovar, o git, as linhas alteradas, o custo estimado e a duração da sessão. Organiza tudo em 1, 2 ou 3 linhas. |
 | Painel de agentes | Mostra uma linha por subagente, com o estado, o uso de contexto, o tempo e o progresso. |
-| Temas | Traz 10 temas prontos. Você pode mudar qualquer cor, as barras, os separadores e as bordas, e também importar e exportar temas. Envia as cores para o Windows Terminal e para o VS Code. |
+| Temas | Traz 10 temas prontos. Você pode mudar qualquer cor, as barras, os separadores e as bordas, e também importar e exportar temas. Envia as cores para o Windows Terminal, o iTerm2 e o VS Code. |
 | Comando `td` | Abre um painel com as informações disponíveis e gerencia temas, configuração, atualização, voz e diagnóstico. |
 | Atualização | Quando sai uma versão nova, um botão aparece na status line. O comando `td update` baixa a versão, confere a integridade e instala sem mexer na sua configuração. |
-| Voz | Você segura um atalho, fala e solta, e o texto é digitado onde está o cursor. A transcrição é feita no seu computador, em português ou inglês. |
+| Voz | Você segura um atalho, fala e solta, e o texto é digitado onde está o cursor. A transcrição é feita no seu computador, em português ou inglês. Por enquanto, só no Windows. |
 
 ## Requisitos
 
-1. Windows 10 ou 11.
-2. [Node.js](https://nodejs.org/pt-br/download) 18.17 ou mais novo. A versão LTS é a recomendada.
+1. Windows 10 ou 11, ou macOS. No Mac, funciona tanto nos modelos com chip Apple (M1, M2, M3, M4 e seguintes) quanto nos modelos Intel. Os testes automáticos rodam no macOS 15 nos dois tipos de processador. Versões mais antigas do macOS que rodam o Node.js 18 ou mais novo também devem funcionar.
+2. [Node.js](https://nodejs.org/pt-br/download) 18.17 ou mais novo. A versão LTS é a recomendada. No Mac, também dá para instalar com `brew install node`.
 3. Para a status line: [Claude Code](https://code.claude.com) instalado.
-4. Para a voz: um microfone e o Microsoft Visual C++ Redistributable x64, que a maioria dos computadores já tem. O `td doctor` avisa se estiver faltando.
+4. Para a voz (só no Windows): um microfone e o Microsoft Visual C++ Redistributable x64, que a maioria dos computadores já tem. O `td doctor` avisa se estiver faltando.
 
 Não precisa de permissão de administrador.
 
 ## Instalação
 
-### Opção 1: baixar a versão pronta
+### Jeito mais fácil: uma linha só
+
+**No Mac** (ou Linux), abra o app Terminal e cole:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Mrz1nn/terminal-design/main/scripts/get.sh | sh
+```
+
+**No Windows**, abra o PowerShell e cole:
+
+```powershell
+irm https://raw.githubusercontent.com/Mrz1nn/terminal-design/main/scripts/get.ps1 | iex
+```
+
+Esse único comando faz o seguinte:
+1. Se não tiver o Node.js, instala.
+   - No Mac, baixa uma cópia oficial só para o Terminal-Design, sem pedir senha e sem mexer no resto do sistema.
+   - No Windows, usa o winget, que pode pedir uma confirmação do Windows.
+2. Baixa a versão mais recente e confere o SHA-256 antes de usar qualquer arquivo.
+3. Instala e liga a status line no Claude Code.
+4. No Windows, já baixa a digitação por voz.
+
+Ao terminar, abra um terminal novo e digite `td`.
+
+Opções, para quem quiser personalizar:
+
+| No Mac | No Windows | Efeito |
+|---|---|---|
+| `TD_NO_CLAUDE=1` | `$env:TD_NO_CLAUDE=1` | Não liga a status line no Claude Code |
+| `TD_NO_VOICE=1` | `$env:TD_NO_VOICE=1` | Não baixa a voz |
+| `TD_THEME=nord` | `$env:TD_THEME='nord'` | Já escolhe um tema |
+
+No Mac, a opção vai antes do `sh`. Por exemplo: `curl -fsSL .../get.sh | TD_THEME=nord sh`. No Windows, defina a variável na mesma janela antes de colar o comando.
+
+Se preferir instalar passo a passo, use um dos jeitos abaixo.
+
+### No Mac
+
+1. Abra a página de [Releases](https://github.com/Mrz1nn/terminal-design/releases/latest) e baixe o arquivo `terminal-design-<versão>.zip`.
+2. Abra a pasta Downloads e dê dois cliques no zip para extrair, se o Safari ainda não tiver extraído.
+3. Abra o app **Terminal**. Ele fica em Aplicativos, Utilitários, ou pode ser aberto pelo Spotlight com Cmd+Espaço.
+4. Rode os dois comandos abaixo, trocando `<versão>` pelo número da versão baixada:
+
+```bash
+cd ~/Downloads/terminal-design-<versão>
+sh scripts/install.sh --claude-code
+```
+
+5. Feche a janela do Terminal e abra outra.
+
+Para instalar com git em vez do zip:
+
+```bash
+git clone https://github.com/Mrz1nn/terminal-design.git
+cd terminal-design
+sh scripts/install.sh --claude-code
+```
+
+No Mac, o programa fica em `~/.local/share/terminal-design` e a configuração em `~/.config/terminal-design`. O instalador acrescenta um bloco marcado ao `~/.zshrc` para o comando `td` funcionar, e ao `~/.bash_profile` se ele existir. Antes de mexer nesses arquivos, faz backup. Para o Claude Code, o instalador registra um atalho que acha o Node.js sozinho, inclusive quando ele foi instalado pelo Homebrew, nvm ou Volta.
+
+Opções do instalador no Mac: `--claude-code`, `--theme=nord` e `--no-path`.
+
+### No Windows: baixar a versão pronta
 
 1. Abra a página de [Releases](https://github.com/Mrz1nn/terminal-design/releases/latest).
 2. Baixe o arquivo `terminal-design-<versão>.zip`.
@@ -62,7 +124,7 @@ Não precisa de permissão de administrador.
 powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -ClaudeCode
 ```
 
-### Opção 2: clonar com git
+### No Windows: clonar com git
 
 ```powershell
 git clone https://github.com/Mrz1nn/terminal-design.git
@@ -70,7 +132,7 @@ cd terminal-design
 powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -ClaudeCode
 ```
 
-### O que o instalador faz
+### O que o instalador do Windows faz
 
 1. Confere se o Node.js está instalado e na versão certa.
 2. Copia o programa para `%LOCALAPPDATA%\TerminalDesign\versions\<versão>`.
@@ -79,7 +141,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -ClaudeCode
 5. Com `-ClaudeCode`, liga a status line no Claude Code. Antes de mexer, ele faz um backup do `settings.json` e guarda a status line que você tinha, para devolver se um dia você desinstalar.
 6. Roda um diagnóstico no final.
 
-Opções do instalador:
+Opções do instalador do Windows:
 
 | Opção | Efeito |
 |---|---|
@@ -230,11 +292,15 @@ td theme set meu-tema
 
 No **Windows Terminal**, rode `td theme wt` e escolha `TD <tema>` em Configurações, Perfil, Aparência, Esquema de cores. O arquivo de configuração do Windows Terminal não é alterado.
 
+No **iTerm2** (Mac), rode `td theme export tokyo-night tokyo-night.itermcolors --iterm`. Depois, no iTerm2, abra Settings, Profiles, Colors, Color Presets, escolha Import e selecione o arquivo.
+
 No **VS Code**, rode `td theme export tokyo-night cores.json --vscode` e cole o conteúdo no `settings.json` do VS Code.
 
 Os detalhes estão em [docs/themes.md](docs/themes.md).
 
 ## Digitação por voz
+
+Por enquanto, a voz funciona só no Windows. No Mac, `td voice` avisa que ainda não há suporte, e o resto do Terminal-Design funciona normalmente.
 
 ```powershell
 td voice setup   # baixa o transcritor e o modelo (pergunta antes, mostra tamanho e origem)
@@ -255,7 +321,7 @@ O atalho é configurável: `td config set voice.hotkey "Ctrl+Shift+F8"`. O idiom
 
 ## Configuração
 
-O arquivo fica em `%APPDATA%\TerminalDesign\config.json` e guarda só o que você mudou. Os principais valores:
+O arquivo fica em `%APPDATA%\TerminalDesign\config.json` no Windows e em `~/.config/terminal-design/config.json` no Mac. Ele guarda só o que você mudou. Os principais valores:
 
 | Chave | Padrão | Valores |
 |---|---|---|
@@ -281,7 +347,7 @@ td uninstall --purge   # remove também a configuração, os temas próprios e o
 A desinstalação faz o seguinte:
 
 1. Desliga a status line no Claude Code e devolve a que você tinha antes.
-2. Tira o `td` do PATH.
+2. Tira o `td` do PATH. No Mac, remove só o bloco marcado que ele tinha colocado no `~/.zshrc` e no `~/.bash_profile`.
 3. Apaga só as pastas criadas pelo Terminal-Design.
 
 ## Privacidade e segurança
@@ -301,7 +367,13 @@ Para relatar uma falha de segurança, veja [SECURITY.md](SECURITY.md).
 ## Problemas comuns
 
 **O comando `td` não é encontrado.**
-Abra um terminal novo. Se ainda não funcionar, rode `"%LOCALAPPDATA%\TerminalDesign\bin\td.cmd" doctor`.
+Abra um terminal novo. Se ainda não funcionar, rode no Windows `"%LOCALAPPDATA%\TerminalDesign\bin\td.cmd" doctor`, ou no Mac `~/.local/share/terminal-design/bin/td doctor`.
+
+**No Mac, a status line diz que não achou o Node.js.**
+Isso acontece quando o Node.js foi instalado num lugar fora do comum. Rode `which node` e reinstale com `TD_NODE=<caminho que apareceu> sh scripts/install.sh --claude-code`. Outra opção é instalar o Node.js com `brew install node`.
+
+**No Mac, aparece "permissão negada" ao rodar o instalador.**
+Use `sh scripts/install.sh` exatamente assim, com o `sh` na frente.
 
 **O Windows bloqueou o script de instalação.**
 Use exatamente o comando com `-ExecutionPolicy Bypass` mostrado em [Instalação](#instalação). Ele vale só para essa execução e não muda nada no seu sistema.

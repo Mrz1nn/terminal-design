@@ -24,7 +24,14 @@ const sumName = meta.checksumAsset || 'SHA256SUMS.txt';
 const prefix = `terminal-design-${version}`;
 
 const files = listProgramFiles(root);
-const entries = files.map((rel) => ({ name: `${prefix}/${rel}`, data: fs.readFileSync(path.join(root, ...rel.split('/'))) }));
+// Shell scripts must have LF line endings or macOS/Linux sh fails on "\r". A Windows
+// checkout with core.autocrlf=true would otherwise ship CRLF ones.
+const LF_ONLY = /\.(sh|bash|zsh|fish)$/;
+const entries = files.map((rel) => {
+  let data = fs.readFileSync(path.join(root, ...rel.split('/')));
+  if (LF_ONLY.test(rel)) data = Buffer.from(data.toString('utf8').replace(/\r\n/g, '\n'), 'utf8');
+  return { name: `${prefix}/${rel}`, data };
+});
 
 fs.mkdirSync(outDir, { recursive: true });
 const zipFile = path.join(outDir, zipName);

@@ -65,6 +65,14 @@ O formato está em [`themes/theme.schema.json`](../themes/theme.schema.json). Ed
 
 `td theme wt` grava todos os temas como esquemas de cores em um [fragmento JSON](https://learn.microsoft.com/windows/terminal/json-fragment-extensions) (`%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\TerminalDesign`). O `settings.json` do Windows Terminal **não é alterado**. Para usar, escolha `TD <tema>` em Configurações > Perfil > Aparência > Esquema de cores.
 
+## iTerm2 (Mac)
+
+```bash
+td theme export tokyo-night tokyo-night.itermcolors --iterm
+```
+
+O comando gera um preset no formato do iTerm2. Para usar, abra no iTerm2 Settings > Profiles > Colors > Color Presets > Import, escolha o arquivo e selecione o preset. O td não altera as preferências do iTerm2. O `td theme wt` funciona só no Windows. No Mac, ele mostra como usar o `--iterm`.
+
 ## VS Code
 
 ```powershell

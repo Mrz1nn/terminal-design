@@ -125,7 +125,7 @@ export function activate(paths, v, { previous } = {}) {
 /** Swap current and previous. Throws when there is nothing valid to go back to. */
 export function rollback(paths) {
   const cur = readCurrent(paths);
-  if (!cur) throw new Error('current.json ausente ou inválido; reinstale com scripts\\install.ps1');
+  if (!cur) throw new Error(`current.json ausente ou inválido; reinstale com ${process.platform === 'win32' ? 'scripts\\install.ps1' : 'sh scripts/install.sh'}`);
   if (!cur.previous) throw new Error('não há versão anterior registrada para voltar');
   if (!isValidVersionDir(paths, cur.previous)) throw new Error(`a versão anterior ${cur.previous} não está mais instalada`);
   const after = { version: cur.previous, previous: cur.version, switchedAt: new Date().toISOString() };
