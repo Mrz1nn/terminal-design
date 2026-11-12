@@ -117,7 +117,10 @@ jobs:
           $v = & $td version; Write-Host $v; Check ($v -match [regex]::Escape($env:FROM)) "versão instalada errada"
           $cmd = (Get-Content "$env:CLAUDE_CONFIG_DIR\settings.json" -Raw | ConvertFrom-Json).statusLine.command
           Write-Host "status line: $cmd"
-          function SL { cmd /d /c "$cmd < `"$sample`"" | Out-String }
+          # Run the exact command line from settings.json through cmd.exe, stdin from the sample payload.
+          $bat = "$root\statusline.cmd"
+          [IO.File]::WriteAllText($bat, "@echo off`r`n$cmd < `"$sample`"`r`n")
+          function SL { & cmd.exe /d /c $bat 2>&1 | Out-String }
 
           SL | Write-Host
           $cache = "$env:TD_DATA_HOME\cache\update-check.json"
