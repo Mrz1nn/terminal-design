@@ -151,3 +151,19 @@ test('statusline accepts stdin with a UTF-8 BOM (Windows PowerShell pipe)', () =
   assert.ok(!r.stdout.includes('JSON inválido'), r.stdout);
   assert.ok(r.stdout.includes('Opus 5.5'), r.stdout);
 });
+
+test('status line: tip shows when there is no update; the update button wins and can carry /td atualizar', async () => {
+  const { renderStatusLine } = await import('../apps/terminal-cockpit/src/index.js');
+  const { DEFAULTS } = await import('../packages/config/src/defaults.js');
+  const { resolveTheme } = await import('../packages/themes/src/index.js');
+  const config = structuredClone(DEFAULTS);
+  const theme = resolveTheme(config);
+  const strip = (s) => s.replace(/\x1b\][^\x07]*\x07/g, '').replace(/\x1b\[[0-9;]*m/g, '');
+  const tip = 'dica: /tema muda as cores';
+  const withTip = strip(renderStatusLine({ model: { display_name: 'Opus' } }, { config, theme, colorMode: 'none', tip, width: 200 }));
+  assert.match(withTip, /dica: \/tema muda as cores/);
+  const notice = { version: '9.9.9', current: '0.1.0', url: null, command: '/td atualizar', mode: 'managed' };
+  const both = strip(renderStatusLine({ model: { display_name: 'Opus' } }, { config, theme, colorMode: 'none', tip, updateNotice: notice, width: 200 }));
+  assert.match(both, /\[ ↑ atualizar para 9\.9\.9 \] \/td atualizar/);
+  assert.doesNotMatch(both, /dica:/);
+});

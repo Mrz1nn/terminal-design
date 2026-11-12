@@ -53,7 +53,7 @@ export function terminalWidth(config, env = process.env) {
 
 /**
  * Full status line render.
- * opts: { config, theme, now, git (override), updateNotice, env, colorMode }
+ * opts: { config, theme, now, git (override), updateNotice, tip, env, colorMode }
  */
 export function renderStatusLine(raw, opts) {
   registerWidgets();
@@ -67,6 +67,7 @@ export function renderStatusLine(raw, opts) {
       ? readGit(d.cwd, { cacheDir: paths.cache, cacheMs: config.cockpit.git.cacheMs, now })
       : null;
   d.updateNotice = opts.updateNotice ?? null;
+  d.tip = opts.tip ?? null;
 
   const mode = opts.colorMode ?? detectColorMode(config.color.mode, opts.env ?? process.env);
   const paint = makePainter(theme, mode);

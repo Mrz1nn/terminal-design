@@ -13,7 +13,7 @@ const ENUMS = {
 };
 
 // On/off settings: anything that is not true/false is a mistake (e.g. "false" typed as text).
-const BOOLEANS = ['cockpit.showUnavailable', 'cockpit.git.enabled', 'telemetry'];
+const BOOLEANS = ['cockpit.tips', 'cockpit.showUnavailable', 'cockpit.git.enabled', 'telemetry'];
 
 export function getAt(obj, dotted) {
   return dotted.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);

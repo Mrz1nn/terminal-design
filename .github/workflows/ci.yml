@@ -56,7 +56,20 @@ jobs:
           OUT=$(env -i HOME="$HOME" PATH=/usr/bin:/bin sh -c "$CMD" < tests/fixtures/statusline-sample.json)
           echo "$OUT"
           echo "$OUT" | grep -q "Opus 5.5"
+          # /tema and /td are installed with the status line
+          test -f "$CLAUDE_CONFIG_DIR/commands/tema.md"
+          test -f "$CLAUDE_CONFIG_DIR/commands/td.md"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            # iTerm2 colors through the Dynamic Profile (iTerm2 itself is simulated by its prefs file)
+            mkdir -p "$HOME/Library/Preferences" && touch "$HOME/Library/Preferences/com.googlecode.iterm2.plist"
+            "$TD" theme set nord --terminal --quiet-preview --no-color
+            P="$HOME/Library/Application Support/iTerm2/DynamicProfiles/terminal-design.json"
+            node -e "const p=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).Profiles[0]; if(p.Name!=='Terminal-Design'||!p['Ansi 15 Color']) process.exit(1)" "$P"
+            "$TD" theme terminal off --no-color
+            test ! -f "$P"
+          fi
           "$TD" uninstall --yes
+          test ! -f "$CLAUDE_CONFIG_DIR/commands/tema.md"
           ! grep -q "terminal-design" "$HOME/.zshrc"
 
       # One-line installer (get.sh / get.ps1) against a release zip built from this commit.

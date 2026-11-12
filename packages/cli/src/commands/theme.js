@@ -1,3 +1,4 @@
+import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import { listThemes, loadTheme, normalizeTheme, importTheme, exportTheme, PALETTE_KEYS } from '../../../themes/src/index.js';
@@ -76,9 +77,34 @@ function setTheme(nameOrNumber, flags, ctx) {
 }
 
 /** --terminal (or --wt): the same colors in Windows Terminal, right away. */
+/**
+ * Home folder whose iTerm2 profile we may touch. Sandbox installs (a custom TD_DATA_HOME, as in
+ * tests and CI) never touch the real one unless TD_ITERM_HOME says where to write.
+ */
+function itermHome(paths, env = process.env) {
+  if (env.TD_ITERM_HOME) return path.resolve(env.TD_ITERM_HOME);
+  const defaultData = path.join(os.homedir(), '.local', 'share', 'terminal-design');
+  if (env.TD_DATA_HOME && path.resolve(env.TD_DATA_HOME) !== path.resolve(defaultData)) return null;
+  return os.homedir();
+}
+
+function applyToMacTerminal(name, ctx) {
+  const { ui } = ctx;
+  const home = itermHome(ctx.paths);
+  if (!home || !iterm.isItermInstalled({ home })) {
+    ui.warn('No Mac, as cores do terminal mudam automaticamente só no iTerm2, e ele não foi encontrado. O Terminal do macOS não permite isso; use td theme export <tema> <arquivo>.itermcolors --iterm para o iTerm2.');
+    return;
+  }
+  const r = iterm.applyItermProfile(loadTheme(name, ctx.paths), { home });
+  ui.ok(`iTerm2: perfil "${iterm.PROFILE_NAME}" agora com as cores do tema. Abas que usam esse perfil mudam na hora.`);
+  if (r.firstTime) ui.print(`  ${ui.c.muted(`Só na primeira vez: iTerm2 > Settings > Profiles > escolha "${iterm.PROFILE_NAME}" > Other Actions > Set as Default. Depois disso, cada troca de tema vale na hora.`)}`);
+  ui.print(`  ${ui.c.muted('Para remover o perfil: td theme terminal off')}`);
+}
+
 function applyToTerminal(name, ctx) {
   const { ui } = ctx;
-  if (process.platform !== 'win32') { ui.warn(NOT_WINDOWS); return; }
+  if (process.platform === 'darwin') return applyToMacTerminal(name, ctx);
+  if (process.platform !== 'win32') { ui.warn('No Linux, as cores do terminal não mudam automaticamente; só a status line mudou.'); return; }
   const r = wt.applyScheme(loadTheme(name, ctx.paths), ctx.paths);
   if (r.applied.length) {
     ui.ok(`Windows Terminal: esquema "${r.scheme}" aplicado em todos os perfis. As cores mudam na hora.`);
@@ -148,7 +174,13 @@ export default {
       case 'terminal': {
         // td theme terminal off: Windows Terminal back to the colors it had before --terminal.
         if (a !== 'off') throw new UsageError('use td theme set <tema> --terminal para aplicar, ou td theme terminal off para desfazer');
-        if (process.platform !== 'win32') { ui.warn(NOT_WINDOWS); return 1; }
+        if (process.platform === 'darwin') {
+          const home = itermHome(ctx.paths);
+          if (home && iterm.removeItermProfile({ home })) ui.ok(`iTerm2: perfil "${iterm.PROFILE_NAME}" removido. Escolha outro perfil padrão em Settings > Profiles, se precisar.`);
+          else ui.info('iTerm2: nada a desfazer.');
+          return 0;
+        }
+        if (process.platform !== 'win32') { ui.info('Nada a desfazer neste sistema.'); return 0; }
         const r = wt.restoreScheme(ctx.paths);
         if (r.restored.length) ui.ok('Windows Terminal: cores de antes restauradas.');
         else ui.info('Windows Terminal: nada a desfazer (o td não tinha mudado as cores, ou você já trocou o esquema).');

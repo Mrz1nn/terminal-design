@@ -68,6 +68,14 @@ export default {
         ui.warn(`Windows Terminal: não foi possível remover os esquemas (${err.message}).`);
       }
     }
+    if (process.platform === 'darwin') {
+      const iterm = await loadIntegration(paths.appRoot, 'iterm2');
+      try {
+        if (iterm?.removeItermProfile?.()) ui.ok('iTerm2: perfil Terminal-Design removido.');
+      } catch (err) {
+        ui.warn(`iTerm2: não foi possível remover o perfil (${err.message}).`);
+      }
+    }
 
     {
       // Windows: user PATH in the registry. macOS/Linux: our marked block in the shell profiles

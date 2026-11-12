@@ -43,7 +43,7 @@ export function statusCommand(paths, sub = false, platform = process.platform) {
 // same name but without the mark belongs to the user and is never touched.
 export const COMMAND_MARK = '<!-- terminal-design:command';
 /** Bump when the command text changes: existing installs pick up the new text once. */
-export const COMMANDS_VERSION = 2;
+export const COMMANDS_VERSION = 3;
 
 /** How Claude Code should run td: same program as the status line, without the statusline tail. */
 export function tdCommand(paths, platform = process.platform) {
@@ -64,7 +64,7 @@ export function commandFiles(paths, platform = process.platform) {
   return {
     'tema.md': [
       '---',
-      'description: Troca o tema do Terminal-Design (status line do Claude Code e, se pedir, o Windows Terminal)',
+      'description: Troca o tema do Terminal-Design (status line do Claude Code e, se pedir, o terminal: Windows Terminal ou iTerm2)',
       'argument-hint: "[nome ou número] [terminal]"',
       // Lets /tema run without a permission prompt, but only `td theme ...` (nothing else).
       `allowed-tools: Bash(${td} theme:*)`,
@@ -73,16 +73,65 @@ export function commandFiles(paths, platform = process.platform) {
       '',
       'Tema do Terminal-Design. Argumento recebido: "$ARGUMENTS".',
       '',
-      `- Sem argumento: rode \`${td} theme list --no-color\` e mostre a lista numerada exatamente como veio, com o tema atual marcado. Depois diga que dá para escolher pelo nome ou número (ex.: \`/tema 6\`) e que, com a palavra terminal no fim (ex.: \`/tema 6 terminal\`), as cores também mudam no Windows Terminal. Não aplique nada sozinho.`,
+      `- Sem argumento: rode \`${td} theme list --no-color\` e mostre a lista numerada exatamente como veio, com o tema atual marcado. Depois diga que dá para escolher pelo nome ou número (ex.: \`/tema 6\`) e que, com a palavra terminal no fim (ex.: \`/tema 6 terminal\`), as cores também mudam no terminal (Windows Terminal; no Mac, iTerm2). Não aplique nada sozinho.`,
       `- Argumento "terminal off": rode \`${td} theme terminal off --no-color\` e diga o resultado em uma linha.`,
       `- Argumento com a palavra "terminal" depois do tema (ex.: "nord terminal"): rode \`${td} theme set <tema> --terminal --quiet-preview --no-color\`, trocando <tema> pelo nome ou número recebido.`,
       `- Outro argumento (nome ou número): rode \`${td} theme set <argumento> --quiet-preview --no-color\`.`,
-      '- Depois de aplicar, responda em uma ou duas linhas: o tema foi aplicado e a status line muda em alguns segundos. Se usou terminal, diga o que aconteceu no Windows Terminal e que `/tema terminal off` desfaz. Se der erro, mostre o erro e a lista de temas.',
+      '- Depois de aplicar, responda em uma ou duas linhas: o tema foi aplicado e a status line muda em alguns segundos. Se usou terminal, diga o que aconteceu no terminal (e, se a saída pedir, o passo único no iTerm2) e que `/tema terminal off` desfaz. Se der erro, mostre o erro e a lista de temas.',
+      '',
+      'Não rode nenhum outro comando nem mude outros arquivos.',
+      '',
+    ].join('\n'),
+    'td.md': [
+      '---',
+      'description: Terminal-Design: atualizar, voltar versão, layout da status line, diagnóstico',
+      'argument-hint: "[atualizar | verificar | voltar | layout compacto|cockpit|completo | diagnóstico | versão | dicas off]"',
+      // Only these td subcommands can run without a permission prompt.
+      `allowed-tools: Bash(${td} update:*), Bash(${td} config set cockpit.:*), Bash(${td} doctor:*), Bash(${td} version:*)`,
+      '---',
+      `${COMMAND_MARK} v${COMMANDS_VERSION}: criado por td claude install; td claude uninstall remove. -->`,
+      '',
+      'Terminal-Design. Argumento recebido: "$ARGUMENTS". Aceite com ou sem acento e em inglês (update, rollback, doctor, version).',
+      '',
+      `- Sem argumento: rode \`${td} version --no-color\` e mostre a versão. Depois liste as opções em poucas linhas: \`/td atualizar\`, \`/td verificar\`, \`/td voltar\`, \`/td layout compacto|cockpit|completo\`, \`/td diagnóstico\`, \`/td dicas off\`, e lembre que \`/tema\` troca as cores.`,
+      `- atualizar: rode \`${td} update --yes --no-color\`. Resuma em uma ou duas linhas (versão nova, ou que já está na mais recente). Se atualizou, diga que a status line já usa a versão nova e que \`/td voltar\` desfaz.`,
+      `- verificar: rode \`${td} update --check --no-color\` e diga se há versão nova e quais as novidades, em poucas linhas.`,
+      `- voltar: rode \`${td} update --rollback --yes --no-color\` e diga para qual versão voltou.`,
+      `- layout compacto | cockpit | completo: rode \`${td} config set cockpit.layout <compact|cockpit|full> --no-color\` (compacto = compact, completo = full). Diga que a status line muda em alguns segundos.`,
+      `- diagnóstico: rode \`${td} doctor --no-color\` e resuma: se está tudo certo, ou o que falhou e como resolver.`,
+      `- versão: rode \`${td} version --no-color\`.`,
+      `- dicas off: rode \`${td} config set cockpit.tips false --no-color\` (dicas on: true).`,
+      '- Outra coisa: diga que não reconheceu e liste as opções.',
       '',
       'Não rode nenhum outro comando nem mude outros arquivos.',
       '',
     ].join('\n'),
   };
+}
+
+/** Text after the update button inside Claude Code: our /td command when it is installed. */
+export function updateCommandHint(paths) {
+  const file = path.join(commandsDir(paths), 'td.md');
+  return isOurCommandFile(file) ? '/td atualizar' : null;
+}
+
+const TIP_DAYS = 3;
+
+/**
+ * Onboarding tip for the status line during the first TIP_DAYS after our commands were
+ * installed (cockpit.tips = false turns it off). Pure apart from one small state file.
+ */
+export function onboardingTip(paths, config, now = Date.now()) {
+  if (config?.cockpit?.tips === false) return null;
+  if (!isOurCommandFile(path.join(commandsDir(paths), 'tema.md'))) return null;
+  const file = path.join(paths.dataHome, 'onboarding.json');
+  let first = readJson(file, null)?.firstSeen;
+  if (!Number.isFinite(first)) {
+    first = now;
+    try { writeJsonAtomic(file, { firstSeen: now }); } catch { /* best effort */ }
+  }
+  if (now - first > TIP_DAYS * 86400e3) return null;
+  return config?.cockpit?.locale === 'en' ? 'tip: /tema changes colors · /td updates' : 'dica: /tema muda as cores · /td atualiza';
 }
 
 function isOurCommandFile(file) {

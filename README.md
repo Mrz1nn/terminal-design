@@ -4,10 +4,16 @@ Um cockpit para o terminal do Windows e do Mac. Ele mostra uma status line organ
 
 Gratuito, open source (licença MIT), sem assinatura, sem API paga e sem telemetria.
 
-```
-Opus 5.5 high think │ ctx ━━━━──────── 34% 340k/1M │ 5h ━━━── 62% ↻2h15m │ 7d ━──── 18% ↻4d
-meu-projeto │ ⎇ main +2 ~3 ?1 ↑1 │ +128 −42 │ $1.23 est. │ ⏱ 31m
-```
+![Status line do Terminal-Design no Claude Code, com o tema trocado pelo comando /tema](docs/images/tema.svg)
+
+Dentro do Claude Code, tudo é feito pela conversa:
+
+| Comando | O que faz |
+|---|---|
+| `/tema` | Lista os 10 temas. `/tema 6` aplica; `/tema 6 terminal` muda também as cores do terminal. |
+| `/td atualizar` | Instala a versão nova quando a status line mostra o aviso. |
+| `/td layout compacto` | Status line em 1 linha (`cockpit` = 2, `completo` = 3). |
+| `/td diagnóstico` | Confere se está tudo certo. |
 
 ## Sumário
 
@@ -162,6 +168,8 @@ A status line aparece na próxima mensagem que você mandar no Claude Code.
 
 Você não precisa reinstalar nada para receber versões novas.
 
+![Aviso de versão nova na status line](docs/images/atualizacao.svg)
+
 **Como você fica sabendo:** uma vez por hora, em segundo plano, o Terminal-Design consulta as releases públicas deste repositório. A consulta é anônima, sem token e sem dados pessoais. Quando existe uma versão mais nova, aparece um botão na status line do Claude Code e no painel `td`:
 
 ```
@@ -264,12 +272,16 @@ Os itens sem dado somem. Para ver `n/d` no lugar deles: `td config set cockpit.s
 
 Temas prontos: Midnight (padrão), Dracula, Nord, Tokyo Night, Catppuccin, Gruvbox, One Dark, Monokai, Solarized e Terminal Classic.
 
+![Os 10 temas do Terminal-Design](docs/images/temas.svg)
+
 ```powershell
 td theme list             # lista numerada
 td theme set tokyo-night  # ou pelo número: td theme set 10
 ```
 
-**Dentro do Claude Code**, sem sair da conversa: digite `/tema` para ver a lista numerada e `/tema nord` (ou `/tema 6`) para aplicar. A status line muda em alguns segundos. Com `/tema nord terminal`, o Windows Terminal também muda de cor; `/tema terminal off` desfaz. O comando `/tema` é instalado junto com a status line pelo `td claude install` e removido pelo `td claude uninstall`.
+**Dentro do Claude Code**, sem sair da conversa: digite `/tema` para ver a lista numerada e `/tema nord` (ou `/tema 6`) para aplicar. A status line muda em alguns segundos. Com `/tema nord terminal`, o terminal também muda de cor (Windows Terminal; no Mac, iTerm2); `/tema terminal off` desfaz.
+
+No **iTerm2** (Mac), o `--terminal` mantém um perfil chamado `Terminal-Design` com as cores do tema. Na primeira vez, deixe-o como padrão em iTerm2 > Settings > Profiles > Other Actions > Set as Default. Depois disso, cada troca de tema vale na hora. O Terminal do macOS não permite trocar as cores dessa forma. O comando `/tema` é instalado junto com a status line pelo `td claude install` e removido pelo `td claude uninstall`.
 
 Para mudar só algumas cores sem criar um tema:
 

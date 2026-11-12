@@ -60,7 +60,16 @@ async function updateNotice(config) {
   }
 }
 
-export async function runStatusLine({ subagent = false } = {}) {
+/**
+ * extras (from the CLI, so the cockpit stays independent of the integrations):
+ *   updateCommand  text shown after the update button (e.g. "/td atualizar" inside Claude Code)
+ *   tip            onboarding tip shown when there is no update notice
+ */
+function withCommand(info, command) {
+  return info && typeof info === 'object' && command && info.mode !== 'dev' ? { ...info, command } : info;
+}
+
+export async function runStatusLine({ subagent = false, updateCommand = null, tip = null } = {}) {
   const paths = getPaths();
   const config = loadConfig(paths);
   const theme = safeTheme(config, paths);
@@ -77,7 +86,7 @@ export async function runStatusLine({ subagent = false } = {}) {
   if (!subagent && raw.session_id) saveLastPayload(paths, raw);
   const out = subagent
     ? renderSubagentRows(raw, { config, theme })
-    : renderStatusLine(raw, { config, theme, paths, updateNotice: await updateNotice(config) });
+    : renderStatusLine(raw, { config, theme, paths, updateNotice: withCommand(await updateNotice(config), updateCommand), tip });
   process.stdout.write(out);
   return 0;
 }

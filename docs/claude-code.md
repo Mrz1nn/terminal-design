@@ -34,6 +34,24 @@ O que ele garante:
 - Pergunta antes de substituir uma status line de terceiros.
 - Usa `refreshInterval: 30` para que a contagem até a renovação dos limites e o git continuem atualizados mesmo sem mensagens novas.
 
+## Comando `/td`
+
+O `td claude install` também cria `~/.claude/commands/td.md`:
+
+| Comando | Faz |
+|---|---|
+| `/td` | mostra a versão e as opções |
+| `/td atualizar` | `td update --yes` |
+| `/td verificar` | `td update --check` |
+| `/td voltar` | `td update --rollback` |
+| `/td layout compacto\|cockpit\|completo` | muda o layout da status line |
+| `/td diagnóstico` | `td doctor` |
+| `/td dicas off` | desliga as dicas da status line |
+
+Ele roda sem pedir permissão só para esses subcomandos do `td`. Com o `/td` instalado, o aviso de versão nova na status line diz `/td atualizar` em vez de `td update`.
+
+Nos primeiros 3 dias, a status line mostra a dica `dica: /tema muda as cores · /td atualiza` quando não há aviso de versão. Para desligar: `/td dicas off` ou `td config set cockpit.tips false`.
+
 ## Comando `/tema`
 
 O `td claude install` também cria `~/.claude/commands/tema.md`. No Claude Code:

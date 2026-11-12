@@ -24,6 +24,7 @@ Se o arquivo tiver um valor inválido, o td usa o padrão daquela chave e avisa 
 | `cockpit.layout` | `cockpit` | `compact`, `cockpit`, `full`, `custom` |
 | `cockpit.rows` | `null` | Linhas de widgets (quando o layout é `custom`) |
 | `cockpit.hide` | `[]` | Widgets que devem ficar escondidos |
+| `cockpit.tips` | `true` | Dica do `/tema` e do `/td` na status line nos primeiros 3 dias |
 | `cockpit.showUnavailable` | `false` | Mostra `n/d` nos dados que não existem |
 | `cockpit.maxWidth` | `160` | Largura usada quando o Claude Code não informa `COLUMNS` |
 | `cockpit.locale` | `pt-BR` | `pt-BR`, `en` |

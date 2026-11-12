@@ -21,6 +21,8 @@ export const DEFAULTS = Object.freeze({
     hide: [],
     // Show widgets whose data is unavailable as "n/d" instead of hiding them.
     showUnavailable: false,
+    // Short tips (e.g. "/tema muda as cores") during the first days after installing.
+    tips: true,
     // Fallback width when Claude Code does not provide COLUMNS.
     maxWidth: 160,
     // Language for labels: pt-BR | en

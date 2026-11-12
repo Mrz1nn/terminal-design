@@ -112,7 +112,7 @@ test('install writes /tema with our mark and the same td program as the status l
   const paths = getPaths();
   const r = cc.install(paths);
   const file = path.join(cc.commandsDir(paths), 'tema.md');
-  assert.deepEqual(r.commands.written, [file]);
+  assert.deepEqual(r.commands.written, [file, path.join(cc.commandsDir(paths), 'td.md')]);
   const text = fs.readFileSync(file, 'utf8');
   assert.ok(text.includes(cc.COMMAND_MARK));
   assert.ok(text.includes(`${cc.tdCommand(paths)} theme list --no-color`));
@@ -123,7 +123,7 @@ test('install writes /tema with our mark and the same td program as the status l
   assert.match(text, /^---\ndescription: /);
   assert.equal(cc.tdCommand(paths, 'win32'), cc.statusCommand(paths, false, 'win32').replace(' statusline --from=terminal-design', ''));
   const u = cc.uninstall(paths);
-  assert.deepEqual(u.commands.removed, [file]);
+  assert.equal(u.commands.removed.length, 2);
   assert.equal(fs.existsSync(file), false);
 });
 
@@ -135,6 +135,7 @@ test("a user's own tema.md is never overwritten nor removed", () => {
   fs.writeFileSync(file, 'meu comando');
   const r = cc.install(paths);
   assert.deepEqual(r.commands.skipped, [file]);
+  assert.ok(fs.existsSync(path.join(cc.commandsDir(paths), 'td.md')), 'the other command still installs');
   cc.uninstall(paths);
   assert.equal(fs.readFileSync(file, 'utf8'), 'meu comando');
 });
@@ -218,4 +219,73 @@ test('a settings.json with comments or invalid JSON is never rewritten', () => {
 
 test('sandbox installs (custom TD_DATA_HOME) never look at the real Windows Terminal settings', () => {
   assert.deepEqual(wt.settingsFiles({ TD_DATA_HOME: 'C:/tmp/x', LOCALAPPDATA: 'C:/Users/a/AppData/Local' }), []);
+});
+
+// ---- /td, update hint, onboarding tip -------------------------------------------
+
+test('/td command: update, rollback, layout, doctor; permission only for those td subcommands', () => {
+  isolate();
+  const paths = getPaths();
+  cc.install(paths);
+  const text = fs.readFileSync(path.join(cc.commandsDir(paths), 'td.md'), 'utf8');
+  const td = cc.tdCommand(paths);
+  for (const s of ['update --yes', 'update --check', 'update --rollback --yes', 'config set cockpit.layout', 'doctor', 'config set cockpit.tips false']) {
+    assert.ok(text.includes(`${td} ${s}`), s);
+  }
+  assert.ok(text.includes(`allowed-tools: Bash(${td} update:*), Bash(${td} config set cockpit.:*), Bash(${td} doctor:*), Bash(${td} version:*)`));
+  assert.ok(text.includes(cc.COMMAND_MARK));
+});
+
+test('update button says /td atualizar only when our /td exists', () => {
+  isolate();
+  const paths = getPaths();
+  assert.equal(cc.updateCommandHint(paths), null);
+  cc.install(paths);
+  assert.equal(cc.updateCommandHint(paths), '/td atualizar');
+  const file = path.join(cc.commandsDir(paths), 'td.md');
+  fs.writeFileSync(file, 'meu td');
+  assert.equal(cc.updateCommandHint(paths), null, "a user's own td.md is not ours");
+});
+
+test('onboarding tip: first 3 days after /tema is installed, off with cockpit.tips=false, English locale', () => {
+  isolate();
+  const paths = getPaths();
+  const cfg = { cockpit: { tips: true, locale: 'pt-BR' } };
+  assert.equal(cc.onboardingTip(paths, cfg), null, 'no commands, no tip');
+  cc.install(paths);
+  const t0 = Date.parse('2026-11-12T12:00:00Z');
+  assert.match(cc.onboardingTip(paths, cfg, t0), /\/tema muda as cores · \/td atualiza/);
+  assert.ok(cc.onboardingTip(paths, cfg, t0 + 2 * 86400e3));
+  assert.equal(cc.onboardingTip(paths, cfg, t0 + 4 * 86400e3), null, 'gone after 3 days');
+  assert.equal(cc.onboardingTip(paths, { cockpit: { tips: false } }, t0), null);
+  assert.match(cc.onboardingTip(paths, { cockpit: { locale: 'en' } }, t0), /^tip: /);
+});
+
+// ---- iTerm2 dynamic profile (macOS) ---------------------------------------------
+
+test('iTerm2: one "Terminal-Design" dynamic profile, rewritten per theme, inherits Default, removed by off', async () => {
+  const it = await import('../integrations/iterm2/index.js');
+  const home = path.join(isolate(), 'home');
+  assert.equal(it.isItermInstalled({ home, exists: () => false }), false);
+  assert.equal(it.isItermInstalled({ home, exists: (p) => p === '/Applications/iTerm.app' }), true);
+  const first = it.applyItermProfile(nord(), { home });
+  assert.equal(first.firstTime, true);
+  assert.equal(first.file, path.join(home, 'Library', 'Application Support', 'iTerm2', 'DynamicProfiles', 'terminal-design.json'));
+  let doc = JSON.parse(fs.readFileSync(first.file, 'utf8'));
+  assert.equal(doc.Profiles.length, 1);
+  const p = doc.Profiles[0];
+  assert.equal(p.Name, 'Terminal-Design');
+  assert.equal(p.Guid, it.PROFILE_GUID);
+  assert.equal(p['Dynamic Profile Parent Name'], 'Default');
+  assert.equal(p['Background Color']['Color Space'], 'sRGB');
+  for (let i = 0; i < 16; i++) assert.ok(p[`Ansi ${i} Color`], `ansi ${i}`);
+  const nordBg = p['Background Color'];
+  const second = it.applyItermProfile(JSON.parse(fs.readFileSync(path.join(getPaths().builtinThemes, 'dracula.json'), 'utf8')), { home });
+  assert.equal(second.firstTime, false);
+  doc = JSON.parse(fs.readFileSync(second.file, 'utf8'));
+  assert.equal(doc.Profiles[0].Guid, it.PROFILE_GUID, 'same profile, new colors');
+  assert.notDeepEqual(doc.Profiles[0]['Background Color'], nordBg);
+  assert.equal(it.removeItermProfile({ home }), true);
+  assert.equal(fs.existsSync(second.file), false);
+  assert.equal(it.removeItermProfile({ home }), false);
 });

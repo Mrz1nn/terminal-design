@@ -4,6 +4,15 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 ## [Não lançado]
 
+## [0.3.3] - 2026-11-12
+
+### Adicionado
+- Comando `/td` no Claude Code: `/td atualizar`, `/td verificar`, `/td voltar`, `/td layout compacto|cockpit|completo`, `/td diagnóstico`, `/td versão` e `/td dicas off`. Roda sem pedir permissão só para esses subcomandos.
+- O aviso de versão nova na status line diz `/td atualizar`, para atualizar sem sair do Claude Code.
+- Dica nos primeiros 3 dias: `dica: /tema muda as cores · /td atualiza`. Desliga com `/td dicas off` ou `cockpit.tips false`.
+- Mac: `td theme set <tema> --terminal` e `/tema <tema> terminal` mantêm um perfil `Terminal-Design` no iTerm2 (Dynamic Profiles) com as cores do tema. Depois de escolhê-lo como padrão uma vez, cada troca vale na hora. `td theme terminal off` e o `td uninstall` removem o perfil.
+- Imagens no README geradas pela própria status line (`node scripts/screenshots.js`): os 10 temas, o aviso de atualização e o `/tema`.
+
 ## [0.3.2] - 2026-11-12
 
 ### Adicionado

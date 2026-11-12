@@ -228,17 +228,27 @@ export const WIDGETS = [
       return `${link} ${paint.color('accent', u.command)}`;
     },
   },
+  {
+    // Onboarding tip for the first days (never together with the update button).
+    id: 'tip',
+    group: 'meta',
+    priority: 60,
+    render(d, { paint }) {
+      if (!d.tip || d.updateNotice) return null;
+      return paint.color('muted', d.tip);
+    },
+  },
 ];
 
 export const LAYOUTS = {
-  compact: [['model', 'context', 'limit5h', 'limit7d', 'git', 'update']],
+  compact: [['model', 'context', 'limit5h', 'limit7d', 'git', 'update', 'tip']],
   cockpit: [
     ['model', 'context', 'limit5h', 'limit7d', 'spend'],
-    ['dir', 'git', 'pr', 'agent', 'changes', 'cost', 'duration', 'update'],
+    ['dir', 'git', 'pr', 'agent', 'changes', 'cost', 'duration', 'update', 'tip'],
   ],
   full: [
     ['model', 'context', 'limit5h', 'limit7d', 'spend', 'monthly'],
     ['dir', 'git', 'pr', 'worktree', 'agent', 'changes', 'cost', 'duration'],
-    ['session', 'mode', 'cache', 'claudeVersion', 'update'],
+    ['session', 'mode', 'cache', 'claudeVersion', 'update', 'tip'],
   ],
 };
