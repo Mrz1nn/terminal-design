@@ -109,3 +109,14 @@ test('td theme: numbered list without a terminal, set and preview by number', ()
   assert.match(bad.err, /não existe tema número 99/);
   td('theme', 'set', 'midnight');
 });
+
+test('td theme terminal: only "off" is valid; set --terminal in a sandbox never touches the real terminal', () => {
+  assert.equal(td('theme', 'terminal').code, 2);
+  assert.equal(td('theme', 'terminal', 'on').code, 2);
+  const r = td('theme', 'set', 'nord', '--terminal', '--quiet-preview');
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.out, /Tema nord aplicado\. A status line do Claude Code muda em alguns segundos/);
+  if (process.platform === 'win32') assert.match(r.out, /Windows Terminal não encontrado/);
+  assert.doesNotMatch(r.out, /Opus/, '--quiet-preview hides the sample status line');
+  td('theme', 'set', 'midnight', '--quiet-preview');
+});

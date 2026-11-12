@@ -116,7 +116,10 @@ test('install writes /tema with our mark and the same td program as the status l
   const text = fs.readFileSync(file, 'utf8');
   assert.ok(text.includes(cc.COMMAND_MARK));
   assert.ok(text.includes(`${cc.tdCommand(paths)} theme list --no-color`));
-  assert.ok(text.includes(`${cc.tdCommand(paths)} theme set $ARGUMENTS --no-color`));
+  assert.ok(text.includes(`${cc.tdCommand(paths)} theme set <argumento> --quiet-preview --no-color`));
+  assert.ok(text.includes(`allowed-tools: Bash(${cc.tdCommand(paths)} theme:*)`), 'no permission prompt, theme only');
+  assert.ok(text.includes('--terminal') && text.includes('theme terminal off'));
+  assert.ok(!text.includes('theme preview'), 'preview is useless in the chat');
   assert.match(text, /^---\ndescription: /);
   assert.equal(cc.tdCommand(paths, 'win32'), cc.statusCommand(paths, false, 'win32').replace(' statusline --from=terminal-design', ''));
   const u = cc.uninstall(paths);
@@ -149,4 +152,70 @@ test('ensureCommands (status line): adds /tema once for existing installs, respe
   fs.rmSync(file);
   assert.equal(cc.ensureCommands(paths), false, 'already done for this version');
   assert.equal(fs.existsSync(file), false, 'user deletion respected');
+});
+
+// ---- Windows Terminal: apply / restore a scheme ----------------------------------
+
+function wtSandbox(content) {
+  const root = isolate();
+  const file = path.join(root, 'wt', 'settings.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, typeof content === 'string' ? content : JSON.stringify(content, null, 4));
+  const env = { ...process.env, TD_WT_SETTINGS: file, TD_WT_FRAGMENTS_DIR: path.join(root, 'frag') };
+  return { file, env, paths: getPaths() };
+}
+
+const nord = () => JSON.parse(fs.readFileSync(path.join(getPaths().builtinThemes, 'nord.json'), 'utf8'));
+
+test('applyScheme sets the default scheme, keeps everything else, backs up; restore brings the old one back', () => {
+  const { file, env, paths } = wtSandbox({ defaultProfile: '{x}', profiles: { defaults: { colorScheme: 'Campbell', font: { size: 11 } }, list: [{ name: 'PowerShell' }, { name: 'Ubuntu', colorScheme: 'One Half Dark' }] }, schemes: [] });
+  const r = wt.applyScheme(nord(), paths, env);
+  assert.deepEqual(r.applied, [file]);
+  assert.equal(r.scheme, 'TD Nord');
+  assert.deepEqual(r.overridden, ['Ubuntu']);
+  let s = readJson(file);
+  assert.equal(s.profiles.defaults.colorScheme, 'TD Nord');
+  assert.deepEqual(s.profiles.defaults.font, { size: 11 });
+  assert.equal(s.defaultProfile, '{x}');
+  assert.ok(fs.existsSync(path.join(env.TD_WT_FRAGMENTS_DIR, 'terminal-design.json')), 'schemes written');
+  assert.ok(fs.readdirSync(paths.backups).some((f) => f.startsWith('windows-terminal-settings.json')));
+  wt.applyScheme(JSON.parse(fs.readFileSync(path.join(paths.builtinThemes, 'dracula.json'), 'utf8')), paths, env); // second theme
+  assert.deepEqual(wt.restoreScheme(paths, env).restored, [file]);
+  s = readJson(file);
+  assert.equal(s.profiles.defaults.colorScheme, 'Campbell', 'the original, not the first TD scheme');
+});
+
+test('restore removes the key when there was none, and leaves a scheme the user picked afterwards', () => {
+  const a = wtSandbox({ profiles: { list: [] } });
+  wt.applyScheme(nord(), a.paths, a.env);
+  wt.restoreScheme(a.paths, a.env);
+  assert.equal(readJson(a.file).profiles.defaults.colorScheme, undefined);
+
+  const b = wtSandbox({ profiles: { defaults: {} } });
+  wt.applyScheme(nord(), b.paths, b.env);
+  const s = readJson(b.file);
+  s.profiles.defaults.colorScheme = 'Minha cor';
+  fs.writeFileSync(b.file, JSON.stringify(s));
+  assert.deepEqual(wt.restoreScheme(b.paths, b.env).restored, []);
+  assert.equal(readJson(b.file).profiles.defaults.colorScheme, 'Minha cor');
+});
+
+test('a settings.json with comments or invalid JSON is never rewritten', () => {
+  const withComments = '{\n  // meu comentário\n  "profiles": { "defaults": {} }\n}\n';
+  const c = wtSandbox(withComments);
+  const r = wt.applyScheme(nord(), c.paths, c.env);
+  assert.equal(r.applied.length, 0);
+  assert.match(r.skipped[0].reason, /comentários/);
+  assert.equal(fs.readFileSync(c.file, 'utf8'), withComments);
+
+  const urls = wtSandbox({ profiles: { defaults: { icon: 'https://x.y/z.png' } } }); // "//" inside a string is fine
+  assert.equal(wt.applyScheme(nord(), urls.paths, urls.env).applied.length, 1);
+
+  const broken = wtSandbox('{ "profiles": ');
+  assert.match(wt.applyScheme(nord(), broken.paths, broken.env).skipped[0].reason, /JSON inválido/);
+  assert.equal(fs.readFileSync(broken.file, 'utf8'), '{ "profiles": ');
+});
+
+test('sandbox installs (custom TD_DATA_HOME) never look at the real Windows Terminal settings', () => {
+  assert.deepEqual(wt.settingsFiles({ TD_DATA_HOME: 'C:/tmp/x', LOCALAPPDATA: 'C:/Users/a/AppData/Local' }), []);
 });

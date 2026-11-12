@@ -6,7 +6,8 @@
 td theme                     # escolher numa lista com amostras de cor
 td theme list
 td theme set tokyo-night
-td theme set nord --wt       # também envia os esquemas ao Windows Terminal
+td theme set nord --terminal # também aplica no Windows Terminal, na hora
+td theme terminal off        # Windows Terminal volta às cores de antes
 td theme preview gruvbox     # mostra a status line com dados de exemplo
 ```
 
@@ -63,7 +64,15 @@ O formato está em [`themes/theme.schema.json`](../themes/theme.schema.json). Ed
 
 ## Windows Terminal
 
-`td theme wt` grava todos os temas como esquemas de cores em um [fragmento JSON](https://learn.microsoft.com/windows/terminal/json-fragment-extensions) (`%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\TerminalDesign`). O `settings.json` do Windows Terminal **não é alterado**. Para usar, escolha `TD <tema>` em Configurações > Perfil > Aparência > Esquema de cores.
+`td theme wt` grava todos os temas como esquemas de cores em um [fragmento JSON](https://learn.microsoft.com/windows/terminal/json-fragment-extensions) (`%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\TerminalDesign`), sem mexer no `settings.json`. Para usar, escolha `TD <tema>` em Configurações > Perfil > Aparência > Esquema de cores.
+
+`td theme set <tema> --terminal` faz isso e também aplica o esquema em todos os perfis, gravando `profiles.defaults.colorScheme` no `settings.json` do Windows Terminal (que recarrega sozinho). As regras:
+
+- backup do `settings.json` em `%LOCALAPPDATA%\TerminalDesign\backups` antes de cada mudança;
+- o esquema que você usava é guardado uma vez e volta com `td theme terminal off` e no `td uninstall`;
+- o `off` só desfaz se o esquema ainda for um `TD ...`; se você trocou depois, ele não mexe;
+- arquivo com comentários ou JSON inválido nunca é reescrito;
+- perfis com esquema próprio continuam com o deles, e o td avisa quais são.
 
 ## iTerm2 (Mac)
 

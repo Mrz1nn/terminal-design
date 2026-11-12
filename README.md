@@ -207,7 +207,8 @@ Para religar: `td config set update.auto notify`. Se você usa a versão clonada
 | `td update` | Atualiza (veja [Atualizações](#atualizações)) |
 | `td theme` | Escolhe o tema numa lista |
 | `td theme list` | Lista os temas |
-| `td theme set <nome>` | Aplica um tema. Com `--wt`, envia as cores ao Windows Terminal. |
+| `td theme set <nome ou número>` | Aplica um tema. Com `--terminal`, aplica também no Windows Terminal, na hora. |
+| `td theme terminal off` | Devolve as cores que o Windows Terminal tinha antes |
 | `td theme preview <nome>` | Mostra a status line com o tema, usando dados de exemplo |
 | `td theme import <arquivo>` | Instala um tema a partir de um arquivo `.json` |
 | `td theme export <nome> <arquivo>` | Exporta um tema. Com `--vscode`, gera as cores para o VS Code. |
@@ -268,7 +269,7 @@ td theme list             # lista numerada
 td theme set tokyo-night  # ou pelo número: td theme set 10
 ```
 
-**Dentro do Claude Code**, sem sair da conversa: digite `/tema` para ver a lista numerada e `/tema nord` (ou `/tema 6`) para aplicar. A status line muda na próxima mensagem. O comando `/tema` é instalado junto com a status line pelo `td claude install` e removido pelo `td claude uninstall`.
+**Dentro do Claude Code**, sem sair da conversa: digite `/tema` para ver a lista numerada e `/tema nord` (ou `/tema 6`) para aplicar. A status line muda em alguns segundos. Com `/tema nord terminal`, o Windows Terminal também muda de cor; `/tema terminal off` desfaz. O comando `/tema` é instalado junto com a status line pelo `td claude install` e removido pelo `td claude uninstall`.
 
 Para mudar só algumas cores sem criar um tema:
 
@@ -287,7 +288,7 @@ td theme import meu-tema.json
 td theme set meu-tema
 ```
 
-No **Windows Terminal**, rode `td theme wt` e escolha `TD <tema>` em Configurações, Perfil, Aparência, Esquema de cores. O arquivo de configuração do Windows Terminal não é alterado.
+No **Windows Terminal**, `td theme set nord --terminal` (ou `/tema nord terminal` no Claude Code) aplica o tema em todos os perfis e as cores mudam na hora. Antes, o Terminal-Design faz backup do `settings.json` do Windows Terminal e guarda o esquema que você usava; `td theme terminal off` (ou `/tema terminal off`) devolve. Um `settings.json` com comentários nunca é reescrito: nesse caso, escolha `TD <tema>` em Configurações, Perfil, Aparência, Esquema de cores.
 
 No **iTerm2** (Mac), rode `td theme export tokyo-night tokyo-night.itermcolors --iterm`. Depois, no iTerm2, abra Settings, Profiles, Colors, Color Presets, escolha Import e selecione o arquivo.
 

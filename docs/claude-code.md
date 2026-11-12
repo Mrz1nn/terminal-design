@@ -39,7 +39,10 @@ O que ele garante:
 O `td claude install` também cria `~/.claude/commands/tema.md`. No Claude Code:
 
 - `/tema` mostra os temas numerados, com o atual marcado;
-- `/tema nord` ou `/tema 6` aplica o tema. A status line muda na próxima mensagem.
+- `/tema nord` ou `/tema 6` aplica o tema. A status line muda em alguns segundos;
+- `/tema nord terminal` aplica também no Windows Terminal, e `/tema terminal off` desfaz.
+
+O comando roda sem pedir permissão, porque o arquivo libera só `td theme` (`allowed-tools`).
 
 O arquivo leva o marcador `<!-- terminal-design:command`. Um `tema.md` seu, sem esse marcador, nunca é alterado nem apagado. Quem já tinha a status line instalada recebe o `/tema` sozinho, uma única vez, na primeira vez que a status line roda depois de atualizar. Se você apagar o arquivo, ele não volta. O `td claude uninstall` remove só o arquivo com o marcador.
 

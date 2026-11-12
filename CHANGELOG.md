@@ -4,6 +4,17 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 ## [Não lançado]
 
+## [0.3.2] - 2026-11-12
+
+### Adicionado
+- `td theme set <tema> --terminal` aplica o tema também no Windows Terminal, em todos os perfis, e as cores mudam na hora. Faz backup do `settings.json` do Windows Terminal e guarda o esquema anterior; `td theme terminal off` devolve, e o `td uninstall` também. Arquivo com comentários nunca é reescrito.
+- `/tema nord terminal` e `/tema terminal off` no Claude Code.
+
+### Alterado
+- O `/tema` roda sem pedir permissão a cada uso, liberado só para `td theme`.
+- O `/tema` não oferece mais a prévia, que no chat aparecia sem cores.
+- A mensagem diz que a status line muda em alguns segundos, porque ela se atualiza sozinha a cada 30 segundos.
+
 ## [0.3.1] - 2026-11-12
 
 ### Adicionado

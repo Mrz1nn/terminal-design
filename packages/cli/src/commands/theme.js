@@ -70,14 +70,23 @@ function setTheme(nameOrNumber, flags, ctx) {
   const name = resolveThemeArg(nameOrNumber, ctx.paths);
   loadTheme(name, ctx.paths); // throws with a clear message if missing/invalid
   setConfigValue('theme.name', name, ctx.paths);
-  ui.ok(`Tema ${ui.c.bold(name)} aplicado. A status line do Claude Code muda na próxima atualização.`);
-  ui.print(preview(name, { ...ctx, config: { ...ctx.config, theme: { name, overrides: {} } } }).replace(/^/gm, '  '));
-  if (flags.wt && process.platform !== 'win32') ui.warn(NOT_WINDOWS);
-  else if (flags.wt) {
-    const r = wt.syncSchemes(ctx.paths);
-    ui.ok(`Windows Terminal: ${r.count} esquemas em ${r.file}`);
-    ui.print(`  ${ui.c.muted('Escolha "TD ' + (loadTheme(name, ctx.paths).displayName ?? name) + '" em Configurações > Perfil > Aparência > Esquema de cores.')}`);
+  ui.ok(`Tema ${ui.c.bold(name)} aplicado. A status line do Claude Code muda em alguns segundos.`);
+  if (!flags.quietPreview) ui.print(preview(name, { ...ctx, config: { ...ctx.config, theme: { name, overrides: {} } } }).replace(/^/gm, '  '));
+  if (flags.terminal || flags.wt) applyToTerminal(name, ctx);
+}
+
+/** --terminal (or --wt): the same colors in Windows Terminal, right away. */
+function applyToTerminal(name, ctx) {
+  const { ui } = ctx;
+  if (process.platform !== 'win32') { ui.warn(NOT_WINDOWS); return; }
+  const r = wt.applyScheme(loadTheme(name, ctx.paths), ctx.paths);
+  if (r.applied.length) {
+    ui.ok(`Windows Terminal: esquema "${r.scheme}" aplicado em todos os perfis. As cores mudam na hora.`);
+    ui.print(`  ${ui.c.muted('Para voltar às cores que você tinha: td theme terminal off (backup em ' + ctx.paths.backups + ')')}`);
+    if (r.overridden.length) ui.warn(`estes perfis têm esquema próprio e não mudaram: ${r.overridden.join(', ')}`);
   }
+  for (const s of r.skipped) ui.warn(`Windows Terminal: ${s.file} não foi alterado (${s.reason}). Escolha "${r.scheme}" em Configurações > Perfil > Aparência > Esquema de cores.`);
+  if (!r.applied.length && !r.skipped.length) ui.warn(`Windows Terminal não encontrado. Os esquemas foram criados; se instalar depois, rode de novo com --terminal.`);
 }
 
 export default {
@@ -86,7 +95,8 @@ export default {
   usage: [
     'td theme                      seleção interativa',
     'td theme list                 lista os temas',
-    'td theme set <nome|número> [--wt]  aplica (e, com --wt, envia ao Windows Terminal)',
+    'td theme set <nome|número> [--terminal]  aplica (com --terminal, também no Windows Terminal, na hora)',
+    'td theme terminal off         devolve as cores que o Windows Terminal tinha antes',
     'td theme preview <nome>       mostra a status line com o tema',
     'td theme import <arquivo>     instala um tema .json [--force]',
     'td theme export <nome> <arq>  exporta (com personalizações) [--as <novo-nome>]',
@@ -134,6 +144,16 @@ export default {
         exportTheme(a, out, { config: ctx.config, paths: ctx.paths, as: typeof flags.as === 'string' ? flags.as : undefined });
         ui.ok(`Tema exportado para ${out}`);
         return;
+      }
+      case 'terminal': {
+        // td theme terminal off: Windows Terminal back to the colors it had before --terminal.
+        if (a !== 'off') throw new UsageError('use td theme set <tema> --terminal para aplicar, ou td theme terminal off para desfazer');
+        if (process.platform !== 'win32') { ui.warn(NOT_WINDOWS); return 1; }
+        const r = wt.restoreScheme(ctx.paths);
+        if (r.restored.length) ui.ok('Windows Terminal: cores de antes restauradas.');
+        else ui.info('Windows Terminal: nada a desfazer (o td não tinha mudado as cores, ou você já trocou o esquema).');
+        for (const s of r.skipped) ui.warn(`${s.file} não foi alterado (${s.reason}).`);
+        return 0;
       }
       case 'wt': {
         if (process.platform !== 'win32') { ui.warn(NOT_WINDOWS); return 1; }

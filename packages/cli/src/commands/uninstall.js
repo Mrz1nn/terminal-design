@@ -57,6 +57,11 @@ export default {
     const wt = await loadIntegration(paths.appRoot, 'windows-terminal');
     if (wt && typeof wt.removeSchemes === 'function') {
       try {
+        // First give the terminal its own colors back, then remove our schemes.
+        if (typeof wt.restoreScheme === 'function') {
+          const r = wt.restoreScheme(paths);
+          if (r.restored.length) ui.ok('Windows Terminal: cores de antes restauradas.');
+        }
         await wt.removeSchemes();
         ui.ok('Windows Terminal: esquemas de cor do Terminal-Design removidos.');
       } catch (err) {

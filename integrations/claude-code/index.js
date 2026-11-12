@@ -43,7 +43,7 @@ export function statusCommand(paths, sub = false, platform = process.platform) {
 // same name but without the mark belongs to the user and is never touched.
 export const COMMAND_MARK = '<!-- terminal-design:command';
 /** Bump when the command text changes: existing installs pick up the new text once. */
-export const COMMANDS_VERSION = 1;
+export const COMMANDS_VERSION = 2;
 
 /** How Claude Code should run td: same program as the status line, without the statusline tail. */
 export function tdCommand(paths, platform = process.platform) {
@@ -64,16 +64,20 @@ export function commandFiles(paths, platform = process.platform) {
   return {
     'tema.md': [
       '---',
-      'description: Troca o tema do Terminal-Design (status line do Claude Code)',
-      'argument-hint: "[nome ou número do tema]"',
+      'description: Troca o tema do Terminal-Design (status line do Claude Code e, se pedir, o Windows Terminal)',
+      'argument-hint: "[nome ou número] [terminal]"',
+      // Lets /tema run without a permission prompt, but only `td theme ...` (nothing else).
+      `allowed-tools: Bash(${td} theme:*)`,
       '---',
       `${COMMAND_MARK} v${COMMANDS_VERSION}: criado por td claude install; td claude uninstall remove. -->`,
       '',
       'Tema do Terminal-Design. Argumento recebido: "$ARGUMENTS".',
       '',
-      `- Sem argumento: rode \`${td} theme list --no-color\` e mostre a lista numerada exatamente como veio, com o tema atual marcado. Depois pergunte qual tema a pessoa quer (nome ou número). Não aplique nada sozinho.`,
-      `- Com argumento: rode \`${td} theme set $ARGUMENTS --no-color\`. Se der certo, responda em uma linha que o tema foi aplicado e que a status line muda na próxima mensagem. Se der erro, mostre o erro e a lista de temas.`,
-      `- Para ver um tema antes de aplicar, a pessoa pode pedir uma prévia: \`${td} theme preview <nome ou número>\`.`,
+      `- Sem argumento: rode \`${td} theme list --no-color\` e mostre a lista numerada exatamente como veio, com o tema atual marcado. Depois diga que dá para escolher pelo nome ou número (ex.: \`/tema 6\`) e que, com a palavra terminal no fim (ex.: \`/tema 6 terminal\`), as cores também mudam no Windows Terminal. Não aplique nada sozinho.`,
+      `- Argumento "terminal off": rode \`${td} theme terminal off --no-color\` e diga o resultado em uma linha.`,
+      `- Argumento com a palavra "terminal" depois do tema (ex.: "nord terminal"): rode \`${td} theme set <tema> --terminal --quiet-preview --no-color\`, trocando <tema> pelo nome ou número recebido.`,
+      `- Outro argumento (nome ou número): rode \`${td} theme set <argumento> --quiet-preview --no-color\`.`,
+      '- Depois de aplicar, responda em uma ou duas linhas: o tema foi aplicado e a status line muda em alguns segundos. Se usou terminal, diga o que aconteceu no Windows Terminal e que `/tema terminal off` desfaz. Se der erro, mostre o erro e a lista de temas.',
       '',
       'Não rode nenhum outro comando nem mude outros arquivos.',
       '',
