@@ -29,6 +29,7 @@ async function updateLine(ctx) {
 
 export default {
   id: 'dashboard',
+  maxArgs: 0,
   summary: 'Painel principal com as informações disponíveis',
   usage: ['td'],
   async run({ ctx }) {

@@ -5,6 +5,7 @@ const [major, minor] = process.versions.node.split('.').map(Number);
 
 export default {
   id: 'doctor',
+  maxArgs: 0,
   summary: 'Diagnóstico da instalação',
   usage: ['td doctor', 'td doctor --json'],
   async run({ flags, ctx }) {

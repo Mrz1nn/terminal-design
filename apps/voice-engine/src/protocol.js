@@ -6,18 +6,20 @@
 //                  {"event":"cancelled","reason":"short","durationMs":120}
 //                  {"event":"typed","id":1,"chars":12,"requested":12,"insertMode":"type"}
 //                  {"event":"blocked","id":1,"outcome":"blocked"|"interrupted","reason":"focus"|"modifier"|"no-target"|"error","keys":"Ctrl","chars":0,"requested":12}
+//                  {"event":"kept","id":1,"chars":12}       autoInsert off: text stored for copying, nothing typed
 //                  {"event":"copied","chars":12}
 //                  {"event":"devices","devices":[{"index":0,"name":"Microfone (...)","channels":2}]}
 //                  {"event":"warn"|"error","code":"...","message":"..."}
 //                  {"event":"quit","reason":"tray"}
 //   node -> host   {"cmd":"type","id":1,"text":"olá ","insertMode":"type"}   at most once per id
 //                  {"cmd":"drop","id":1}      recording will not be inserted (silence, nothing recognized)
-//                  {"cmd":"copy"}               copy the last non-inserted transcription (user action)
+//                  {"cmd":"keep","id":1,"text":"olá "}   autoInsert off: release the target, offer the text to copy
+//                  {"cmd":"copy"}               copy the last transcription (user action)
 //                  {"cmd":"state","state":"idle"|"processing"|"error","message":"..."}
 //                  {"cmd":"quit"}
 
-export const EVENTS = new Set(['ready', 'recording', 'audio', 'cancelled', 'typed', 'blocked', 'copied', 'devices', 'warn', 'error', 'quit']);
-export const COMMANDS = new Set(['type', 'drop', 'copy', 'state', 'quit']);
+export const EVENTS = new Set(['ready', 'recording', 'audio', 'cancelled', 'typed', 'blocked', 'kept', 'copied', 'devices', 'warn', 'error', 'quit']);
+export const COMMANDS = new Set(['type', 'keep', 'drop', 'copy', 'state', 'quit']);
 
 /** One line -> message object, or null when it is not a protocol message (noise, warnings). */
 export function parseLine(line) {

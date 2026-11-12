@@ -85,22 +85,48 @@ Com `td voice` rodando:
 
 ### Botão de microfone
 
-Com o `td voice` rodando, aparece na tela um botão redondo de microfone, de uns 44 px, sempre por cima das outras janelas. É a alternativa ao atalho quando você prefere usar o mouse, como o microfone de ditado do Chrome.
+Com o `td voice` rodando, aparece na tela um botão redondo de microfone, de 44 px, escuro e discreto, por cima das outras janelas. É a alternativa ao atalho quando você prefere usar o mouse, no estilo do microfone do ChatGPT. As bordas são suaves (janela com transparência por pixel) e o botão fica nítido em telas com escala de 125% ou 150%.
 
 - **Clique** para começar a gravar e **clique de novo** para parar. Isso vale em qualquer `voice.mode`. O atalho continua funcionando como sempre e os dois podem ser misturados: no modo `toggle`, o atalho também para uma gravação iniciada pelo botão. No push-to-talk, soltar o atalho só encerra gravações iniciadas pelo atalho.
 - **Arraste** o botão para onde quiser. A posição fica salva em `%LOCALAPPDATA%\TerminalDesign\voice\cache\button.json`. Se ela cair fora das telas atuais, por exemplo depois de desconectar um monitor, o botão volta para o canto inferior direito.
-- **Clique com o botão direito** para abrir o menu: "Copiar última transcrição não inserida", "Esconder botão" e "Sair". Um botão escondido volta pelo menu da bandeja, em "Mostrar botão do microfone", ou na próxima vez que o `td voice` for iniciado.
-- **Cores**:
+- **Copiar**: depois de cada transcrição aparece, ao lado do microfone, um botão menor de copiar. Um clique copia a última transcrição e ele mostra um visto verde. Ele some ao começar a próxima gravação ou depois de 1 minuto; o menu continua tendo "Copiar última transcrição".
+- **Clique com o botão direito** para abrir o menu: "Copiar última transcrição", "Esconder botão" e "Sair da digitação por voz". Um botão escondido volta pelo menu da bandeja, em "Mostrar botão do microfone". O estado escondido fica salvo e vale na próxima vez que o `td voice` iniciar (só quando a bandeja está ligada, para o botão nunca ficar inacessível).
+- **Estados**:
 
-  | Cor | Significado |
+  | Aparência | Estado |
   |---|---|
-  | Cinza | pronto |
-  | Vermelho | gravando; o anel branco mostra o tempo gravado em relação a `voice.maxSeconds` e pulsa a cada segundo |
-  | Âmbar | transcrevendo |
-  | Âmbar, com a dica "texto guardado, clique com o botão direito para copiar" | a inserção foi bloqueada |
+  | Grafite com microfone branco | pronto. Clareia quando o mouse passa por cima |
+  | Vermelho com barras de áudio e um halo que respira com a sua voz | gravando. Nos últimos 20% de `voice.maxSeconds`, um anel branco mostra quanto falta |
+  | Grafite com um arco girando | transcrevendo, no seu computador |
+  | Verde com visto | concluído. Volta a "pronto" em 1,5 s |
+  | Âmbar com prancheta | texto guardado: a inserção foi cancelada por segurança ou a inserção automática está desligada. Volta a "pronto" em 6 s, e o botão de copiar fica ao lado |
+  | Grafite com anel vermelho e "!" | erro (microfone, transcrição). A dica do mouse diz o motivo. Volta a "pronto" em 3,5 s |
 
+  As animações só rodam enquanto grava, transcreve ou confirma. Parado, o botão não gasta processador.
+- **Aviso de texto**: uma pílula escura ao lado do botão diz o que está acontecendo ("Gravando 3s · clique de novo para parar", "Inserção cancelada: a janela mudou · texto guardado"). Sem o botão, ela aparece centralizada acima da barra de tarefas. Para desligar: `--no-overlay`.
 - **Clique no ícone da bandeja** (botão esquerdo) também liga e desliga a gravação.
+- **Sempre visível**: o padrão é ficar por cima das outras janelas. Para ele se comportar como uma janela comum: `td config set voice.topmost false` (ou `--no-topmost` só nesta execução).
 - Para desligar o botão: `--no-button` ou `td config set voice.button false`.
+
+### Inserção automática opcional
+
+Por padrão o texto é digitado na janela em que você estava. Se preferir só copiar e colar você mesmo:
+
+```powershell
+td config set voice.autoInsert false   # ou td voice --no-insert, só nesta execução
+```
+
+Com ela desligada, o td voice **nunca envia teclas** para outras janelas: a transcrição fica pronta, o botão mostra a prancheta e o botão de copiar aparece ao lado. A área de transferência só muda quando você clica em copiar (ou aperta Enter no terminal do `td voice`).
+
+### Iniciar com o Windows
+
+```powershell
+td voice autostart on       # liga
+td voice autostart status   # mostra se está ligado e para onde o atalho aponta
+td voice autostart off      # desliga
+```
+
+O `on` cria um único atalho, `Terminal-Design voz.lnk`, na sua pasta Inicializar (`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`). Não precisa de administrador, não mexe no registro e não cria tarefa agendada. No próximo login, `td voice` abre numa janela minimizada, que fica visível na barra de tarefas. Na instalação normal o atalho chama `bin\td.cmd voice`, então continua valendo depois de um `td update`. O `off` e o `td uninstall` apagam só esse arquivo; o resto da pasta Inicializar não é tocado.
 
 O botão **nunca recebe foco**. A janela é criada com `WS_EX_NOACTIVATE` e `WS_EX_TOOLWINDOW` e responde `MA_NOACTIVATE` ao `WM_MOUSEACTIVATE`. Por isso, a janela em que você estava digitando continua em primeiro plano, e é para ela que o texto vai. A regra de destino é a mesma do atalho: o texto só é inserido na janela que estava em primeiro plano quando a gravação começou. Se nesse momento a janela em primeiro plano for do próprio td voice (botão, overlay, menu) ou a barra de tarefas, o td usa a última janela externa que esteve em primeiro plano, acompanhada por um gancho `EVENT_SYSTEM_FOREGROUND`. Se não houver nenhuma, a inserção é bloqueada ("nenhuma janela em foco") e o texto fica guardado para copiar.
 
@@ -118,13 +144,16 @@ Começar e parar pelo botão usam o mesmo caminho do atalho: cada gravação é 
 | Uma tecla é pressionada no meio da digitação | A digitação para do mesmo jeito que na troca de foco. |
 | O Windows aceita só parte das teclas enviadas | Toda tecla que o td apertou é solta em seguida. Nenhuma tecla fica presa. |
 | A mesma gravação pediria duas inserções | O host aceita só uma inserção por gravação, identificada pelo id dela, e recusa as repetições. |
+| A janela de destino roda como administrador e o td voice não | **Nada é digitado.** O Windows (UIPI) descartaria as teclas sem avisar e o texto se perderia. O texto fica guardado para copiar. |
+| Modo `paste` com algo na área de transferência que não dá para copiar inteiro | O td não sobrescreve: digita em vez de colar. Quando cola, devolve todos os formatos que estavam lá antes. |
+| O clique foi no próprio botão, no aviso ou na bandeja | Essas janelas nunca são destino. Vale a última janela sua que estava em foco. |
 
-**Copiar o texto guardado:** aperte **Enter** no terminal onde o `td voice` está rodando ou clique com o botão direito no ícone da bandeja e escolha **Copiar última transcrição não inserida**. A área de transferência só é usada quando você pede. O texto fica só na memória e some ao encerrar o `td voice`.
+**Copiar a transcrição:** clique no botão de copiar ao lado do microfone, aperte **Enter** no terminal onde o `td voice` está rodando ou use **Copiar última transcrição** no menu do botão ou da bandeja. Funciona para a última transcrição, tenha ela sido inserida ou não. A área de transferência só é usada quando você pede. O texto fica só na memória e some ao encerrar o `td voice`.
 
 ### Indicadores
 
-- **Overlay**: uma faixa pequena acima da barra de tarefas mostra "● Gravando 3s" e depois "◌ Transcrevendo…". Ela nunca recebe foco, então o texto continua indo para a sua janela. Para desligar: `--no-overlay`.
-- **Bandeja**: o ícone fica cinza quando está pronto, vermelho gravando e âmbar transcrevendo ou com texto guardado. Clique com o botão esquerdo para ligar ou desligar a gravação. O menu do ícone tem "Copiar última transcrição não inserida", "Mostrar botão do microfone" e "Sair". Para desligar: `--no-tray`.
+- **Aviso de texto**: pílula escura ao lado do botão (ou acima da barra de tarefas, sem botão) com "Gravando 3s" e depois "Transcrevendo no seu computador…". Ela nunca recebe foco, então o texto continua indo para a sua janela. Para desligar: `--no-overlay`.
+- **Bandeja**: o ícone fica cinza quando está pronto, vermelho gravando, âmbar transcrevendo ou com texto guardado e verde ao concluir. Clique com o botão esquerdo para ligar ou desligar a gravação. O menu do ícone tem "Copiar última transcrição", "Mostrar botão do microfone" e "Sair". Para desligar: `--no-tray`.
 - **Botão de microfone**: veja [Botão de microfone](#botão-de-microfone). Para desligar: `--no-button`.
 - **Console**: uma linha por evento, com o texto reconhecido e o tempo que levou.
 
@@ -140,7 +169,10 @@ Começar e parar pelo botão usam o mesmo caminho do atalho: cada gravação é 
 | `voice.insertMode` | `type` | `type` (teclas Unicode simuladas) ou `paste` (área de transferência + Ctrl+V) |
 | `voice.appendSpace` | `true` | coloca um espaço depois de cada trecho, para emendar frases |
 | `voice.maxSeconds` | `60` | 1 a 600 |
+| `voice.autoInsert` | `true` | `false` = nunca digita; a transcrição fica pronta para copiar (`--no-insert` só nesta execução) |
 | `voice.button` | `true` | mostra o botão flutuante de microfone (`--no-button` desliga só nesta execução) |
+| `voice.topmost` | `true` | mantém o botão por cima das outras janelas (`--no-topmost` só nesta execução) |
+| `voice.overlay` / `voice.tray` | `true` | aviso de texto e ícone da bandeja |
 
 #### Por que `Ctrl+Shift+F9`
 

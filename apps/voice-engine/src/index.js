@@ -19,6 +19,7 @@ export { buildWhisperArgs, runWhisper, defaultThreads } from './whisper.js';
 export { parseLine, createLineDecoder, encodeCommand } from './protocol.js';
 export { buildHostArgs, startHost, HOST_SCRIPT } from './host.js';
 export { MODELS, PINNED_RELEASE, voicePaths, pickRelease, formatBytes } from './assets.js';
+export { enableAutostart, disableAutostart, autostartStatus, shortcutSpec, startupDir, shortcutPath, SHORTCUT_NAME } from './autostart.js';
 export { resolveOptions, createEngine, blockedMessage, listDevices, recordOnce, transcribeFile, cleanTempDir, SILENCE_PEAK, planSetup, runSetup };
 
 /** Plan + confirm + download. See setup.js for the details. */
@@ -54,6 +55,9 @@ export function status(opts) {
     language: opts.language,
     microphone: opts.microphone,
     insertMode: opts.insertMode,
+    autoInsert: opts.autoInsert,
+    button: opts.button,
+    topmost: opts.topmost,
     dataDir: opts.vp.root,
     hostScript: HOST_SCRIPT,
   };

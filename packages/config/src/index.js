@@ -16,6 +16,9 @@ const ENUMS = {
   'voice.insertMode': ['type', 'paste'],
 };
 
+// On/off settings: anything that is not true/false is a mistake (e.g. "false" typed as text).
+const BOOLEANS = ['voice.enabled', 'voice.appendSpace', 'voice.overlay', 'voice.tray', 'voice.button', 'voice.topmost', 'voice.autoInsert', 'cockpit.showUnavailable', 'cockpit.git.enabled', 'telemetry'];
+
 export function getAt(obj, dotted) {
   return dotted.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
 }
@@ -37,6 +40,10 @@ export function validate(cfg) {
   for (const [key, allowed] of Object.entries(ENUMS)) {
     const v = getAt(cfg, key);
     if (v !== undefined && !allowed.includes(v)) errors.push(`${key}: "${v}" inválido (use ${allowed.join(', ')})`);
+  }
+  for (const key of BOOLEANS) {
+    const v = getAt(cfg, key);
+    if (v !== undefined && typeof v !== 'boolean') errors.push(`${key}: use true ou false`);
   }
   const rows = getAt(cfg, 'cockpit.rows');
   if (rows != null && !(Array.isArray(rows) && rows.every((r) => Array.isArray(r)))) {
@@ -65,6 +72,9 @@ export function loadConfig(paths = getPaths()) {
   for (const key of Object.keys(ENUMS)) {
     const v = getAt(merged, key);
     if (!ENUMS[key].includes(v)) setAt(merged, key, getAt(DEFAULTS, key));
+  }
+  for (const key of BOOLEANS) {
+    if (typeof getAt(merged, key) !== 'boolean') setAt(merged, key, getAt(DEFAULTS, key));
   }
   return merged;
 }

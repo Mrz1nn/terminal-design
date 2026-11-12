@@ -238,3 +238,94 @@ test('protocol: recording/audio with source and ready with button parse as known
   assert.equal(parseLine('{"event":"audio","id":1,"path":"p","reason":"button","source":"button"}').reason, 'button');
   assert.equal(parseLine('{"event":"ready","hotkey":"Ctrl+Shift+F9","button":true}').button, true);
 });
+
+// ---- optional auto-insert, copy always available, topmost -------------------------
+
+test('autoInsert off: never asks the host to type; keeps the text for copying', async () => {
+  const s = setup({ transcript: 'só copiar' });
+  const engine = createEngine({ ...s.engineOpts, autoInsert: false }, {
+    startHost: () => s.host, assertReady: () => {},
+    transcribeFile: async (wav) => { fs.rmSync(wav, { force: true }); return { text: 'só copiar', ms: 3 }; },
+  });
+  const kept = [];
+  const statuses = [];
+  engine.on('kept', (m) => kept.push(m));
+  engine.on('status', (st) => statuses.push(st.state));
+  const p = engine.start();
+  s.host.emit('ready', { device: 'mic' });
+  await p;
+  audio(s, 9);
+  await tick();
+  assert.equal(types(s).length, 0, 'nothing typed');
+  assert.deepEqual(s.host.sent.find((c) => c.cmd === 'keep'), { cmd: 'keep', id: 9, text: 'só copiar ' });
+  assert.deepEqual(kept, [{ text: 'só copiar ', chars: 10 }]);
+  assert.ok(statuses.includes('done'));
+  assert.equal(engine.lastText(), 'só copiar ');
+  assert.equal(engine.copyLast(), true);
+  assert.deepEqual(s.host.sent.at(-1), { cmd: 'copy' });
+});
+
+test('copy stays available after a successful insertion (explicit click only)', async () => {
+  const s = setup({ transcript: 'inserido' });
+  await started(s);
+  assert.equal(s.engine.copyLast(), false, 'nothing yet');
+  audio(s, 10);
+  await tick();
+  s.host.emit('typed', { id: 10, chars: 9, requested: 9 });
+  assert.equal(s.engine.lastText(), 'inserido ');
+  assert.equal(s.host.sent.filter((c) => c.cmd === 'copy').length, 0, 'never copies on its own');
+  assert.equal(s.engine.copyLast(), true);
+});
+
+test('options: autoInsert and topmost default on, config and flags turn them off', async () => {
+  const { resolveOptions } = await import('../apps/voice-engine/src/engine.js');
+  const { voicePaths } = await import('../apps/voice-engine/src/assets.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'td-voice-opts-'));
+  tmpRoots.push(dir);
+  const vp = voicePaths({ voice: dir });
+  const d = resolveOptions({ config: {}, vp });
+  assert.equal(d.autoInsert, true);
+  assert.equal(d.topmost, true);
+  assert.equal(resolveOptions({ config: { voice: { autoInsert: false, topmost: false } }, vp }).autoInsert, false);
+  assert.equal(resolveOptions({ config: { voice: { topmost: true } }, overrides: { topmost: false }, vp }).topmost, false);
+  assert.equal(DEFAULTS.voice.autoInsert, true);
+  assert.equal(DEFAULTS.voice.topmost, true);
+});
+
+test('host args: -NoTopmost only when the button exists and topmost is off', async () => {
+  const { buildHostArgs } = await import('../apps/voice-engine/src/host.js');
+  assert.equal(buildHostArgs({ mode: 'listen' }).includes('-NoTopmost'), false);
+  assert.equal(buildHostArgs({ mode: 'listen', topmost: false }).includes('-NoTopmost'), true);
+  assert.equal(buildHostArgs({ mode: 'listen', button: false, topmost: false }).includes('-NoTopmost'), false);
+  assert.equal(buildHostArgs({ mode: 'record', topmost: false }).includes('-NoTopmost'), false);
+});
+
+test('engine passes topmost to the host', async () => {
+  const s = setup();
+  let hostOpts = null;
+  const engine = createEngine({ ...s.engineOpts, topmost: false }, {
+    startHost: (o) => { hostOpts = o; return s.host; }, assertReady: () => {}, transcribeFile: async () => ({ text: 'x', ms: 1 }),
+  });
+  const p = engine.start();
+  s.host.emit('ready', { device: 'mic' });
+  await p;
+  assert.equal(hostOpts.topmost, false);
+});
+
+test('protocol knows keep/kept; elevated block has a clear message', () => {
+  assert.equal(parseLine('{"event":"kept","id":1,"chars":3}').chars, 3);
+  assert.match(encodeCommand({ cmd: 'keep', id: 1, text: 'a' }), /"keep"/);
+  assert.match(blockedMessage({ outcome: 'blocked', reason: 'elevated' }), /administrador/);
+});
+
+test('config: on/off settings must be true or false; bad values fall back to the default', async () => {
+  const { validate, loadConfig } = await import('../packages/config/src/index.js');
+  assert.deepEqual(validate({ voice: { topmost: false, autoInsert: true } }), []);
+  assert.match(validate({ voice: { topmost: 'nao' } }).join(), /voice\.topmost: use true ou false/);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'td-cfg-bool-'));
+  tmpRoots.push(dir);
+  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ voice: { autoInsert: 'false', button: false } }));
+  const cfg = loadConfig({ configFile: path.join(dir, 'config.json') });
+  assert.equal(cfg.voice.autoInsert, true, 'string "false" is not trusted');
+  assert.equal(cfg.voice.button, false);
+});

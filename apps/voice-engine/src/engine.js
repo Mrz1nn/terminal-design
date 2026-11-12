@@ -26,12 +26,14 @@ export function resolveOptions({ config = {}, overrides = {}, vp = voicePaths() 
     modelName: v.model ?? 'base',
     microphone: v.microphone ?? 'default',
     insertMode: v.insertMode ?? 'type',
+    autoInsert: v.autoInsert ?? true,
     appendSpace: v.appendSpace ?? true,
     maxSeconds: Number(v.maxSeconds ?? 60),
     prompt: v.prompt ?? null,
     overlay: v.overlay ?? true,
     tray: v.tray ?? true,
     button: v.button ?? true,
+    topmost: v.topmost ?? true,
     whisper,
     model,
     vp,
@@ -116,7 +118,8 @@ export function blockedMessage(m) {
   const why = m.reason === 'focus' ? 'a janela em foco mudou depois que você começou a falar'
     : m.reason === 'modifier' ? `havia tecla pressionada (${m.keys || 'modificador'}) e digitar dispararia atalhos`
       : m.reason === 'no-target' ? 'nenhuma janela estava em foco quando a gravação começou'
-        : 'o Windows recusou a digitação';
+        : m.reason === 'elevated' ? 'a janela de destino roda como administrador e o Windows descartaria a digitação'
+          : 'o Windows recusou a digitação';
   const what = m.outcome === 'interrupted'
     ? `inserção interrompida depois de ${m.chars} de ${m.requested} caractere(s)`
     : 'inserção cancelada, nada foi digitado';
@@ -128,6 +131,7 @@ export function blockedMessage(m) {
  *   'status' {state: 'starting'|'ready'|'recording'|'processing'|'typed'|'blocked'|'idle'|'stopped', message?}
  *   'transcript' {text, ms, durationMs}
  *   'blocked' {text, reason, keys, outcome, chars, requested, message}   text kept for manual copy
+ *   'kept' {text, chars}   autoInsert off: nothing typed, text ready to copy (button, tray, Enter)
  *   'copied' {chars}
  *   'warn' {message}   'error' handled as 'fail' {message, fatal}
  *
@@ -144,6 +148,8 @@ export function createEngine(opts, deps = {}) {
   // Text sent for insertion, by recording id, until the host answers typed/blocked.
   const sentText = new Map();
   let lastBlocked = null;
+  // Last transcription of this session (memory only). The user can always copy it.
+  let lastText = null;
 
   const status = (state, message) => em.emit('status', { state, message });
   // Tell the host this recording will not be inserted, so its pending target is released.
@@ -171,6 +177,14 @@ export function createEngine(opts, deps = {}) {
       }
       em.emit('transcript', { text, ms, durationMs: audio.durationMs });
       const final = finalizeText(text, opts);
+      lastText = final;
+      if (opts.autoInsert === false) {
+        // Never types: the host releases the target and offers the text for copying.
+        host?.send({ cmd: 'keep', id: audio.id, text: final });
+        status('done', 'texto pronto para copiar');
+        em.emit('kept', { text: final, chars: final.length });
+        return;
+      }
       sentText.set(audio.id, final);
       // Exactly one insertion request per recording; the host also refuses repeats.
       host?.send({ cmd: 'type', id: audio.id, text: final, insertMode: opts.insertMode });
@@ -187,9 +201,12 @@ export function createEngine(opts, deps = {}) {
   /** Last transcription that was not inserted (focus change, held key...), or null. */
   em.lastBlocked = () => lastBlocked;
 
-  /** Copy the last non-inserted transcription to the clipboard (explicit user action). */
+  /** Last transcription of this session (inserted or not), or null. */
+  em.lastText = () => lastText;
+
+  /** Copy the last transcription to the clipboard (explicit user action only). */
   em.copyLast = () => {
-    if (!lastBlocked) return false;
+    if (!lastText) return false;
     return host?.send({ cmd: 'copy' }) ?? false;
   };
 
@@ -201,7 +218,7 @@ export function createEngine(opts, deps = {}) {
     host = d.startHost({
       mode: 'listen', hotkey: hk, trigger: opts.mode, maxSeconds: opts.maxSeconds, device: opts.microphone,
       insertMode: opts.insertMode, outDir: opts.vp.tmp, cacheDir: opts.vp.cache, overlay: opts.overlay, tray: opts.tray,
-      button: opts.button !== false,
+      button: opts.button !== false, topmost: opts.topmost !== false,
     });
     let ready = false;
     host.on('ready', (m) => { ready = true; status('ready', m.device); resolve(m); });

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { getAt, setConfigValue, loadUserConfig, parseValue, ensureConfig, validate, DEFAULTS } from '../../../config/src/index.js';
 import { deepMerge } from '../../../core/src/index.js';
+import { UsageError, unknownSubcommand } from '../errors.js';
 
 export default {
   id: 'config',
@@ -27,20 +28,20 @@ export default {
         return;
       }
       case 'get':
-        if (!key) throw new Error('informe a chave');
+        if (!key) throw new UsageError('informe a chave: td config get <chave>');
         ui.print(JSON.stringify(getAt(ctx.config, key) ?? null, null, 2));
         return;
       case 'set': {
-        if (!key || !rest.length) throw new Error('uso: td config set <chave> <valor>');
+        if (!key || !rest.length) throw new UsageError('uso: td config set <chave> <valor>');
         if (getAt(DEFAULTS, key) === undefined && !key.startsWith('theme.overrides')) {
-          throw new Error(`chave desconhecida: ${key}`);
+          throw new UsageError(`chave desconhecida: ${key}`);
         }
         setConfigValue(key, parseValue(rest.join(' ')), paths);
         ui.ok(`${key} = ${rest.join(' ')}`);
         return;
       }
       case 'reset': {
-        if (!key) throw new Error('informe a chave');
+        if (!key) throw new UsageError('informe a chave: td config reset <chave>');
         setConfigValue(key, structuredClone(getAt(DEFAULTS, key)), paths);
         ui.ok(`${key} voltou ao padrão`);
         return;
@@ -63,7 +64,7 @@ export default {
         return;
       }
       default:
-        throw new Error(`subcomando desconhecido: ${sub}`);
+        throw unknownSubcommand('config', sub);
     }
   },
   doctor(ctx) {

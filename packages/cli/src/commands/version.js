@@ -1,5 +1,6 @@
 export default {
   id: 'version',
+  maxArgs: 0,
   summary: 'Mostra a versão instalada',
   usage: ['td version', 'td version --json'],
   run({ flags, ctx }) {

@@ -41,6 +41,8 @@ namespace TerminalDesign.Voice.Tests
         public void ClipboardSetText(string text) { ClipSetTextCalls++; ClipText = text; Clip = new DataObject(DataFormats.UnicodeText, text); if (OnClipboardText != null) OnClipboardText(this); }
         public void ClipboardSet(IDataObject data) { ClipSetCalls++; Clip = data; }
         public void ClipboardClear() { ClipClearCalls++; Clip = null; }
+        public bool Elevated;                     // target window runs as administrator
+        public bool TargetElevated(IntPtr target) { return Elevated; }
 
         /// <summary>Text delivered by Unicode key-downs.</summary>
         public string Typed()
@@ -104,6 +106,23 @@ namespace TerminalDesign.Voice.Tests
             bool ok = r.Outcome == "blocked" && r.Reason == reason && r.Chars == 0 && e.Sent.Count == 0
                 && (keys == null || r.Keys == keys) && e.StuckKeys().Count == 0;
             Check(name, ok, Describe(r, e));
+        }
+
+        /// <summary>Semi-transparent reddish pixels above the mic disc (the recording halo).</summary>
+        static int HaloPixels(System.Drawing.Bitmap bmp)
+        {
+            var mic = PillLayout.MicRect(false, false, 1f);
+            double cx = mic.X + mic.Width / 2.0, cy = mic.Y + mic.Height / 2.0, r = mic.Width / 2.0 + 1.5;
+            int n = 0;
+            for (int y = 0; y < bmp.Height; y++)
+                for (int x = 0; x < bmp.Width; x++)
+                {
+                    double dx = x + 0.5 - cx, dy = y + 0.5 - cy;
+                    if (dx * dx + dy * dy <= r * r || dy > 2) continue; // skip the disc and the lowered shadow
+                    var c = bmp.GetPixel(x, y);
+                    if (c.A > 8 && c.R > c.B + 20) n++;
+                }
+            return n;
         }
 
         public static string RunAll()
@@ -309,6 +328,115 @@ namespace TerminalDesign.Voice.Tests
                   screen.Contains(new System.Drawing.Rectangle(off, new System.Drawing.Size(MicButton.Diameter, MicButton.Diameter))), off.ToString());
               Check("invalid button.json is ignored",
                   MicButton.ParsePosition("{oops") == null && MicButton.ParsePosition("{\"x\":1}") == null && MicButton.ParsePosition("") == null, ""); }
+
+
+            // ---- elevated target (UIPI would drop the keys silently) ---------------------
+            { var e = new FakeEnv { Elevated = true }; var r = Run(e, "segredo");
+              Blocked("admin target window: blocked as elevated, nothing typed", e, r, "elevated", null); }
+
+            { var e = new FakeEnv { Elevated = true }; var r = Run(e, "colar", "paste");
+              Check("admin target window in paste mode: clipboard never touched",
+                  r.Outcome == "blocked" && r.Reason == "elevated" && e.ClipSetTextCalls == 0 && e.ClipGetCalls == 0 && e.SendCalls == 0, Describe(r, e)); }
+
+            // ---- button.json: hidden flag ---------------------------------------------------
+            { var p = new System.Drawing.Point(10, 20);
+              Check("hidden flag round-trips through button.json",
+                  MicButton.ParseHidden(MicButton.FormatPosition(p, true)) && !MicButton.ParseHidden(MicButton.FormatPosition(p))
+                  && MicButton.ParsePosition(MicButton.FormatPosition(p, true)).Value == p, "");
+              Check("hidden flag: invalid or missing means visible",
+                  !MicButton.ParseHidden("{oops") && !MicButton.ParseHidden("") && !MicButton.ParseHidden(null) && !MicButton.ParseHidden("{\"hidden\":\"yes\"}"), ""); }
+
+            // ---- pill layout -----------------------------------------------------------------
+            { var anchor = new System.Drawing.Point(1800, 900);
+              foreach (float s in new[] { 1f, 1.5f })
+              {
+                  foreach (bool left in new[] { true, false })
+                  {
+                      var w0 = PillLayout.WindowLocation(anchor, false, left, s);
+                      var w1 = PillLayout.WindowLocation(anchor, true, left, s);
+                      var m0 = PillLayout.MicRect(false, left, s); var m1 = PillLayout.MicRect(true, left, s);
+                      Check("layout x" + s + (left ? " chip left" : " chip right") + ": mic stays under the mouse when the chip appears",
+                          w0.X + m0.X == anchor.X && w1.X + m1.X == anchor.X && w0.Y + m0.Y == anchor.Y && w1.Y + m1.Y == anchor.Y,
+                          w0 + " " + w1);
+                  }
+              }
+              var area = new System.Drawing.Rectangle(0, 0, 1920, 1040);
+              Check("chip goes left on the right half of the screen, right on the left half",
+                  PillLayout.ChipOnLeft(new System.Drawing.Point(1800, 500), area, 1f) && !PillLayout.ChipOnLeft(new System.Drawing.Point(40, 500), area, 1f), ""); }
+
+            { float s = 1f; var mic = PillLayout.MicRect(true, true, s); var chip = PillLayout.ChipRect(true, s);
+              var micCenter = new System.Drawing.Point(mic.X + mic.Width / 2, mic.Y + mic.Height / 2);
+              var chipCenter = new System.Drawing.Point(chip.X + chip.Width / 2, chip.Y + chip.Height / 2);
+              Check("hit test: mic center is the mic, chip center is copy, the corner is nothing",
+                  PillLayout.HitTest(micCenter, true, true, s) == "mic" && PillLayout.HitTest(chipCenter, true, true, s) == "copy"
+                  && PillLayout.HitTest(new System.Drawing.Point(0, 0), true, true, s) == null, "");
+              Check("hit test: no chip, no copy", PillLayout.HitTest(chipCenter, false, true, s) != "copy", "");
+              Check("hit test: the halo/shadow margin around the mic is not a click",
+                  PillLayout.HitTest(new System.Drawing.Point(PillLayout.MicRect(false, false, s).X - 3, micCenter.Y), false, false, s) == null, ""); }
+
+            // ---- look plan -----------------------------------------------------------------------
+            { Check("states map to five distinct looks",
+                  LookPlan.For("idle") == Look.Idle && LookPlan.For("recording") == Look.Recording && LookPlan.For("processing") == Look.Processing
+                  && LookPlan.For("done") == Look.Done && LookPlan.For("blocked") == Look.Blocked && LookPlan.For("error") == Look.Error
+                  && LookPlan.For("whatever") == Look.Idle, "");
+              Check("done/blocked/error return to ready by themselves; recording and processing never time out",
+                  LookPlan.RevertMs("done") > 0 && LookPlan.RevertMs("blocked") > LookPlan.RevertMs("done") && LookPlan.RevertMs("error") > 0
+                  && LookPlan.RevertMs("recording") == 0 && LookPlan.RevertMs("processing") == 0 && LookPlan.RevertMs("idle") == 0, "");
+              Check("copy chip: hidden while recording/transcribing and when there is no text",
+                  LookPlan.ChipVisible("idle", true) && LookPlan.ChipVisible("done", true) && LookPlan.ChipVisible("blocked", true)
+                  && !LookPlan.ChipVisible("recording", true) && !LookPlan.ChipVisible("processing", true) && !LookPlan.ChipVisible("idle", false), "");
+              Check("mic level: silence is near zero, speech is clearly visible, clipped to 1",
+                  ButtonArt.LevelFromPeak(0) == 0 && ButtonArt.LevelFromPeak(150) < 0.12 && ButtonArt.LevelFromPeak(6000) > 0.5
+                  && ButtonArt.LevelFromPeak(32767) == 1 && ButtonArt.LevelFromPeak(-5) == 0, ""); }
+
+            // ---- rendering (offscreen bitmaps only, no window is shown) ---------------------------
+            { var centers = new Dictionary<string, System.Drawing.Color>();
+              bool ok = true; string detail = "";
+              foreach (Look l in new[] { Look.Idle, Look.Recording, Look.Processing, Look.Done, Look.Blocked, Look.Error })
+              {
+                  var f = new ButtonFrame { Look = l, Phase = 0.5, Level = 0.6, Scale = 1f };
+                  using (var bmp = ButtonArt.Render(f))
+                  {
+                      var size = PillLayout.Canvas(false, 1f);
+                      var corner = bmp.GetPixel(0, 0);
+                      // A point inside the disc but away from the glyph (left edge, mid height).
+                      var mic = PillLayout.MicRect(false, false, 1f);
+                      var body = bmp.GetPixel(mic.X + 6, mic.Y + mic.Height / 2);
+                      if (bmp.Width != size.Width || bmp.Height != size.Height) { ok = false; detail += l + " size; "; }
+                      if (corner.A != 0) { ok = false; detail += l + " corner alpha " + corner.A + "; "; }
+                      if (body.A != 255) { ok = false; detail += l + " body alpha " + body.A + "; "; }
+                      centers[l.ToString()] = body;
+                  }
+              }
+              Check("every look renders with transparent corners and an opaque disc", ok, detail);
+              var rec = centers["Recording"]; var done = centers["Done"]; var kept = centers["Blocked"]; var idle = centers["Idle"];
+              Check("looks are told apart by color: recording red, done green, kept amber, ready graphite",
+                  rec.R > rec.G + 60 && done.G > done.R + 40 && kept.R > kept.B + 80 && kept.G > kept.B + 40
+                  && Math.Abs(idle.R - idle.G) < 12 && idle.R < 80, "rec=" + rec + " done=" + done + " kept=" + kept + " idle=" + idle); }
+
+            { var a = new ButtonFrame { Look = Look.Recording, Phase = 0.3, Level = 0.05, Scale = 1f };
+              var b = new ButtonFrame { Look = Look.Recording, Phase = 0.3, Level = 0.9, Scale = 1f };
+              int ha, hb;
+              using (var ba = ButtonArt.Render(a)) ha = HaloPixels(ba);
+              using (var bb = ButtonArt.Render(b)) hb = HaloPixels(bb);
+              Check("recording halo grows with the voice level", hb > ha, "quiet=" + ha + " loud=" + hb); }
+
+            { var f = new ButtonFrame { Look = Look.Idle, Chip = true, ChipLeft = true, Scale = 1.5f };
+              using (var bmp = ButtonArt.Render(f))
+              {
+                  var size = PillLayout.Canvas(true, 1.5f);
+                  var chip = PillLayout.ChipRect(true, 1.5f);
+                  var px = bmp.GetPixel(chip.X + 3, chip.Y + chip.Height / 2);
+                  Check("150% scale with copy chip: bitmap is scaled and the chip is drawn",
+                      bmp.Width == size.Width && bmp.Height == size.Height && size.Width > PillLayout.Canvas(false, 1.5f).Width && px.A == 255,
+                      bmp.Width + "x" + bmp.Height + " chipA=" + px.A);
+              } }
+
+            { bool ok = true;
+              foreach (var text in new[] { "Gravando 3s  ·  clique de novo para parar", "Inserção cancelada: a janela mudou · texto guardado" })
+                  using (var t = ButtonArt.RenderToast(text, System.Drawing.Color.Red, 1f))
+                      ok &= t.GetPixel(0, 0).A == 0 && t.GetPixel(t.Width / 2, t.Height / 2).A > 200 && t.Width < 520 && t.Height < 60;
+              Check("toast: compact one-line pill with transparent corners", ok, ""); }
 
             // ASCII-only output (\uXXXX) so the console code page can never corrupt the JSON.
             string json = new JavaScriptSerializer().Serialize(results);

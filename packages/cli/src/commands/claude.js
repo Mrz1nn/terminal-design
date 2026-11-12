@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import * as cc from '../../../../integrations/claude-code/index.js';
+import { unknownSubcommand } from '../errors.js';
 
 function claudeVersion() {
   try {
@@ -23,6 +24,7 @@ export default {
   async run({ args, flags, ctx }) {
     const { ui, paths } = ctx;
     const sub = args[0] ?? 'status';
+    if (!['status', 'install', 'uninstall', 'remove'].includes(sub)) throw unknownSubcommand('claude', sub);
     const st = cc.status(paths);
     if (st.error) {
       ui.error(st.error);
@@ -55,7 +57,7 @@ export default {
       else ui.ok(r.restored ? 'Integração removida; a status line anterior foi restaurada.' : 'Integração removida.');
       return;
     }
-    throw new Error(`subcomando desconhecido: ${sub}`);
+    throw unknownSubcommand('claude', sub);
   },
   doctor(ctx) {
     const st = cc.status(ctx.paths);

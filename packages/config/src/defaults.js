@@ -47,6 +47,8 @@ export const DEFAULTS = Object.freeze({
     model: 'base', // tiny | base | small | medium (multilingual whisper.cpp models)
     microphone: 'default',
     insertMode: 'type', // type | paste
+    // false = never type into other windows: the transcription only waits for you to copy it.
+    autoInsert: true,
     appendSpace: true,
     maxSeconds: 60,
     // Optional: use an existing whisper-cli.exe / ggml model instead of `td voice setup`.
@@ -58,6 +60,8 @@ export const DEFAULTS = Object.freeze({
     tray: true,
     // Floating click-to-talk mic button (Windows). Position is kept in voice/cache/button.json.
     button: true,
+    // Keep the mic button above other windows. false = it behaves like a normal window.
+    topmost: true,
   },
   telemetry: false,
 });

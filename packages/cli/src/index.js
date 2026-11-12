@@ -16,6 +16,7 @@ import { resolveTheme } from '../../themes/src/index.js';
 import { parseArgs } from './args.js';
 import { createUi } from './ui.js';
 import builtins from './commands/index.js';
+import { EXIT, UsageError } from './errors.js';
 
 let loaded = false;
 export function loadCommands() {
@@ -49,20 +50,29 @@ export async function main(argv = process.argv.slice(2)) {
   if (!cmd) {
     ctx.ui.error(`comando desconhecido: ${name}`);
     ctx.ui.print(`  use ${ctx.ui.c.accent('td help')} para ver os comandos`);
-    return 2;
+    return EXIT.USAGE;
   }
   if (flags.help && name !== 'help') {
     ctx.ui.title(`td ${cmd.id}`);
     ctx.ui.print(`  ${cmd.summary}\n`);
     for (const u of cmd.usage ?? []) ctx.ui.print(`  ${ctx.ui.c.accent(u)}`);
-    return 0;
+    return EXIT.OK;
   }
+  const args = positionals.slice(1);
   try {
-    const code = await cmd.run({ args: positionals.slice(1), flags, ctx });
-    return typeof code === 'number' ? code : 0;
+    // Commands that take no positional arguments say so with maxArgs; extra words are a usage error.
+    if (Number.isInteger(cmd.maxArgs) && args.length > cmd.maxArgs) {
+      throw new UsageError(`argumento inesperado: td ${cmd.id} ${args.slice(cmd.maxArgs).join(' ')}`);
+    }
+    const code = await cmd.run({ args, flags, ctx });
+    return typeof code === 'number' ? code : EXIT.OK;
   } catch (err) {
     ctx.ui.error(err?.message ?? String(err));
+    if (err instanceof UsageError) {
+      ctx.ui.print(`  use ${ctx.ui.c.accent(`td ${cmd.id} --help`)} para ver as opções`);
+      return EXIT.USAGE;
+    }
     if (process.env.TD_DEBUG) console.error(err);
-    return 1;
+    return EXIT.FAIL;
   }
 }

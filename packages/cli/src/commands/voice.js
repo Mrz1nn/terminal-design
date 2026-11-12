@@ -4,9 +4,12 @@ import readline from 'node:readline';
 import {
   resolveOptions, createEngine, test, listDevices, status, doctor, planSetup, runSetup,
   formatBytes, parseHotkey, hotkeyWarnings, DEFAULT_HOTKEY, MODELS,
+  enableAutostart, disableAutostart, autostartStatus,
 } from '../../../../apps/voice-engine/src/index.js';
+import { UsageError, unknownSubcommand } from '../errors.js';
 
 const LANGS = ['pt', 'en', 'auto'];
+const SUBCOMMANDS = ['start', 'setup', 'devices', 'test', 'status', 'autostart'];
 
 /** CLI flags -> engine overrides (only the ones given). */
 function overridesFrom(flags) {
@@ -22,12 +25,14 @@ function overridesFrom(flags) {
     overlay: flags.overlay === false ? false : undefined,
     tray: flags.tray === false ? false : undefined,
     button: flags.button === false ? false : undefined,
+    topmost: flags.topmost === false ? false : undefined,
+    autoInsert: flags.insert === false ? false : undefined,
     appendSpace: flags.space === false ? false : undefined,
   };
-  if (o.language && !LANGS.includes(o.language)) throw new Error(`--language inválido: ${o.language} (use ${LANGS.join(', ')})`);
-  if (o.mode && !['push-to-talk', 'toggle'].includes(o.mode)) throw new Error(`--mode inválido: ${o.mode} (push-to-talk ou toggle)`);
-  if (o.model && !MODELS[o.model]) throw new Error(`--model inválido: ${o.model} (use ${Object.keys(MODELS).join(', ')})`);
-  if (o.insertMode && !['type', 'paste'].includes(o.insertMode)) throw new Error(`--insert inválido: ${o.insertMode} (type ou paste)`);
+  if (o.language && !LANGS.includes(o.language)) throw new UsageError(`--language inválido: ${o.language} (use ${LANGS.join(', ')})`);
+  if (o.mode && !['push-to-talk', 'toggle'].includes(o.mode)) throw new UsageError(`--mode inválido: ${o.mode} (push-to-talk ou toggle)`);
+  if (o.model && !MODELS[o.model]) throw new UsageError(`--model inválido: ${o.model} (use ${Object.keys(MODELS).join(', ')})`);
+  if (o.insertMode && !['type', 'paste'].includes(o.insertMode)) throw new UsageError(`--insert inválido: ${o.insertMode} (type ou paste)`);
   return o;
 }
 
@@ -141,10 +146,46 @@ function cmdStatus({ ctx, opts, flags }) {
     ['atalho', `${s.hotkey} ${ui.c.muted(`(${s.mode})`)}`],
     ['idioma', s.language],
     ['microfone', String(s.microphone)],
-    ['inserção', s.insertMode],
+    ['inserção', s.autoInsert === false ? `desligada ${ui.c.muted('(o texto fica pronto para copiar)')}` : s.insertMode],
+    ['botão', s.button === false ? 'desligado' : s.topmost === false ? 'ligado, não fica por cima das janelas' : 'ligado, sempre visível'],
+    ['iniciar com o Windows', autostartLabel(ctx, ui)],
     ['dados', s.dataDir],
   ]);
   if (!s.whisper.exists || !s.model.exists) ui.print(`\n  ${ui.c.muted('Instale com:')} ${ui.c.accent('td voice setup')}`);
+  return 0;
+}
+
+function autostartLabel(ctx, ui) {
+  const a = autostartStatus(ctx.paths);
+  if (!a.supported) return ui.c.muted('só no Windows');
+  return a.enabled ? ui.c.success('sim') : ui.c.muted('não (td voice autostart on)');
+}
+
+function cmdAutostart({ args, ctx }) {
+  const { ui, paths } = ctx;
+  const action = args[1] ?? 'status';
+  if (!['on', 'off', 'status'].includes(action)) throw new UsageError(`use td voice autostart on, off ou status (recebido: ${action})`);
+  if (action === 'status') {
+    const a = autostartStatus(paths);
+    ui.title('Voz: iniciar com o Windows');
+    ui.table([
+      ['ligado', a.enabled ? ui.c.success('sim') : ui.c.muted('não')],
+      ['atalho', a.file ?? ui.c.muted('n/d')],
+      ...(a.enabled && a.target ? [['abre', a.target]] : []),
+    ]);
+    return 0;
+  }
+  if (action === 'off') {
+    const r = disableAutostart(paths);
+    if (r.removed.length) ui.ok(`inicialização automática desligada (removido: ${r.removed.join(', ')})`);
+    else ui.info('a inicialização automática já estava desligada');
+    return 0;
+  }
+  const r = enableAutostart(paths, { mode: ctx.mode });
+  ui.ok(`${r.replaced ? 'atalho atualizado' : 'inicialização automática ligada'}: ${r.file}`);
+  ui.print(`  ${ui.c.muted('No próximo login, td voice abre numa janela minimizada (fica na barra de tarefas).')}`);
+  ui.print(`  ${ui.c.muted('Sem administrador e sem registro. Desligue com td voice autostart off.')}`);
+  if (ctx.mode !== 'managed') ui.warn('você está num clone git: o atalho aponta para este clone. Se mover a pasta, rode de novo.');
   return 0;
 }
 
@@ -167,6 +208,9 @@ async function cmdStart({ ctx, opts }) {
     ui.print(`    ${ui.c.muted('para copiar: aperte Enter neste terminal ou use o ícone da bandeja > Copiar última transcrição')}`);
   });
   engine.on('copied', ({ chars }) => ui.ok(`transcrição copiada (${chars} caractere(s)). Cole com Ctrl+V onde quiser.`));
+  engine.on('kept', () => {
+    ui.print(`    ${ui.c.muted('inserção automática desligada: clique no ícone de copiar ao lado do botão ou aperte Enter aqui')}`);
+  });
   engine.on('warn', ({ message }) => ui.warn(message));
   engine.on('fail', ({ message }) => ui.error(message));
   if (process.env.TD_DEBUG) engine.on('debug', (l) => ui.print(ui.c.dim(`  [host] ${l}`)));
@@ -178,7 +222,7 @@ async function cmdStart({ ctx, opts }) {
   const how = opts.mode === 'toggle' ? `aperte ${hk.label} para começar e de novo para parar` : `segure ${hk.label} enquanto fala e solte para digitar`;
   ui.ok(`pronto: ${how}`);
   if (ready.button) ui.print(`  ${ui.c.accent('●')} botão de microfone na tela: clique para começar e de novo para parar (arraste para mover, botão direito para o menu; --no-button desliga)`);
-  ui.print(`  ${ui.c.muted(`microfone: ${ready.device} · idioma: ${opts.language} · modelo: ${opts.model.name ?? opts.model.path} · inserção: ${opts.insertMode}`)}`);
+  ui.print(`  ${ui.c.muted(`microfone: ${ready.device} · idioma: ${opts.language} · modelo: ${opts.model.name ?? opts.model.path} · inserção: ${opts.autoInsert === false ? 'desligada (só copiar)' : opts.insertMode}`)}`);
   ui.print(`  ${ui.c.muted('Ctrl+C aqui (ou "Sair" no ícone da bandeja) encerra. Nenhum áudio é guardado.')}`);
   ui.print(`  ${ui.c.muted('Se a janela mudar ou houver tecla pressionada, nada é digitado e o texto fica guardado para copiar.')}`);
 
@@ -187,7 +231,7 @@ async function cmdStart({ ctx, opts }) {
   if (process.stdin.isTTY) {
     rl = readline.createInterface({ input: process.stdin });
     rl.on('line', () => {
-      if (!engine.copyLast()) ui.info('nenhuma transcrição guardada para copiar');
+      if (!engine.copyLast()) ui.info('nenhuma transcrição para copiar ainda');
     });
   }
 
@@ -219,11 +263,16 @@ export default {
     'td voice devices                 lista microfones',
     'td voice test [--seconds=5]      grava e mostra o texto, sem digitar',
     'td voice status [--json]',
+    'td voice autostart on|off|status   inicia a voz quando você entra no Windows',
     'opções: --toggle --hotkey=Ctrl+Shift+F8 --language=pt|en|auto --mic=<índice|nome>',
-    '        --paste --no-space --no-overlay --no-tray --no-button --whisper=<exe> --model-path=<bin>',
+    '        --paste --no-insert (só copiar) --no-space --no-overlay --no-tray --no-button --no-topmost',
+    '        --whisper=<exe> --model-path=<bin>',
   ],
   async run({ args, flags, ctx }) {
     const sub = args[0] ?? 'start';
+    if (!SUBCOMMANDS.includes(sub)) throw unknownSubcommand('voice', sub);
+    const maxArgs = sub === 'autostart' ? 2 : 1;
+    if (args.length > maxArgs) throw new UsageError(`argumento inesperado: td voice ${args.join(' ')}`);
     if (sub === 'setup') return cmdSetup({ flags, ctx });
     const opts = resolveOptions({ config: ctx.config, overrides: overridesFrom(flags) });
     if (process.platform !== 'win32' && sub !== 'status') {
@@ -235,10 +284,8 @@ export default {
       case 'devices': return cmdDevices({ ctx, opts });
       case 'test': return cmdTest({ flags, ctx, opts });
       case 'status': return cmdStatus({ ctx, opts, flags });
-      default:
-        ctx.ui.error(`subcomando desconhecido: td voice ${sub}`);
-        ctx.ui.print('  use td voice --help');
-        return 2;
+      case 'autostart': return cmdAutostart({ args, ctx });
+      default: throw unknownSubcommand('voice', sub);
     }
   },
   async doctor(ctx) {

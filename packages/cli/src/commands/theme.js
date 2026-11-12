@@ -8,6 +8,7 @@ import { SAMPLE_PAYLOAD } from '../sample.js';
 import * as wt from '../../../../integrations/windows-terminal/index.js';
 import * as vscode from '../../../../integrations/vscode/index.js';
 import * as iterm from '../../../../integrations/iterm2/index.js';
+import { UsageError, unknownSubcommand } from '../errors.js';
 
 const NOT_WINDOWS = 'O Windows Terminal só existe no Windows. No Mac, use td theme export <nome> <arquivo>.itermcolors --iterm (iTerm2) ou --vscode.';
 
@@ -91,19 +92,19 @@ export default {
         return listCmd(ctx);
       case 'set':
       case 'use':
-        if (!a) throw new Error('informe o nome: td theme set <nome>');
+        if (!a) throw new UsageError('informe o nome: td theme set <nome>');
         return setTheme(a, flags, ctx);
       case 'preview':
         ui.print(preview(a ?? ctx.config.theme.name, ctx));
         return;
       case 'import': {
-        if (!a) throw new Error('informe o arquivo: td theme import <arquivo.json>');
+        if (!a) throw new UsageError('informe o arquivo: td theme import <arquivo.json>');
         const r = importTheme(path.resolve(a), ctx.paths, { force: !!flags.force });
         ui.ok(`Tema ${ui.c.bold(r.name)} instalado em ${r.file}`);
         return;
       }
       case 'export': {
-        if (!a || !b) throw new Error('uso: td theme export <nome> <arquivo.json>');
+        if (!a || !b) throw new UsageError('uso: td theme export <nome> <arquivo.json>');
         const out = path.resolve(b);
         if (flags.iterm) {
           iterm.writeItermColors(loadTheme(a, ctx.paths), out);
@@ -129,7 +130,7 @@ export default {
         return;
       }
       default:
-        throw new Error(`subcomando desconhecido: ${sub} (veja td theme --help)`);
+        throw unknownSubcommand('theme', sub);
     }
   },
   doctor(ctx) {

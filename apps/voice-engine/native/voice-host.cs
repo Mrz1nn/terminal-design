@@ -4,11 +4,12 @@
 //   - global hotkey (RegisterHotKey) + key-release polling (GetAsyncKeyState) for push-to-talk
 //   - microphone capture with the winmm waveIn API, 16 kHz / mono / 16-bit PCM WAV
 //   - text insertion into the focused window (SendInput KEYEVENTF_UNICODE, or clipboard + Ctrl+V)
-//   - indicators: tray NotifyIcon + small topmost overlay that never takes focus
+//   - indicators: tray NotifyIcon, floating mic button with a copy chip, and a small status
+//     toast. None of them ever takes focus.
 //
 // It talks to Node over stdin/stdout, one JSON object per line (UTF-8).
-//   host -> node: {"event":"ready"|"recording"|"audio"|"cancelled"|"typed"|"blocked"|"copied"|"devices"|"warn"|"error"|"quit", ...}
-//   node -> host: {"cmd":"type"|"drop"|"copy"|"state"|"quit", ...}
+//   host -> node: {"event":"ready"|"recording"|"audio"|"cancelled"|"typed"|"blocked"|"kept"|"copied"|"devices"|"warn"|"error"|"quit", ...}
+//   node -> host: {"cmd":"type"|"keep"|"drop"|"copy"|"state"|"quit", ...}
 // Each recording gets an id ("audio" event). It can be inserted once ("type" with that id), only
 // into the window that had focus when recording started, and never while a modifier is held.
 // When stdin closes (Node died) the host exits, so it can never be left running orphaned.
@@ -188,6 +189,8 @@ namespace TerminalDesign.Voice
         Thread thread;
         volatile bool stopping;
         public int Peak;
+        /// <summary>Peak of the most recent 100 ms buffer (live level for the button).</summary>
+        public volatile int Level;
         public string Error;
 
         public static List<Dictionary<string, object>> ListDevices()
@@ -261,12 +264,15 @@ namespace TerminalDesign.Voice
             if (n <= 0) return;
             var buf = new byte[n];
             Marshal.Copy(h.lpData, buf, 0, n);
+            int local = 0;
             for (int i = 0; i + 1 < n; i += 2)
             {
                 int s = (short)(buf[i] | (buf[i + 1] << 8));
                 if (s < 0) s = -s;
-                if (s > Peak) Peak = s;
+                if (s > local) local = s;
             }
+            if (local > Peak) Peak = local;
+            Level = local;
             pcm.Write(buf, 0, n);
         }
 
@@ -363,6 +369,8 @@ namespace TerminalDesign.Voice
         void ClipboardSetText(string text);
         void ClipboardSet(IDataObject data);
         void ClipboardClear();
+        /// <summary>True when `target` belongs to a more privileged (admin) process than us.</summary>
+        bool TargetElevated(IntPtr target);
     }
 
     /// <summary>The real Win32 environment.</summary>
@@ -377,13 +385,14 @@ namespace TerminalDesign.Voice
         public void ClipboardSetText(string text) { Clipboard.SetText(text); }
         public void ClipboardSet(IDataObject data) { Clipboard.SetDataObject(data, true); }
         public void ClipboardClear() { Clipboard.Clear(); }
+        public bool TargetElevated(IntPtr target) { return Typist.WindowLooksElevated(target); }
     }
 
     /// <summary>Outcome of one insertion attempt.</summary>
     internal sealed class InsertResult
     {
         public string Outcome = "typed";   // typed | blocked | interrupted
-        public string Reason;              // focus | modifier | no-target | error (null when typed)
+        public string Reason;              // focus | modifier | no-target | elevated | error (null when typed)
         public string Keys;                // pressed keys when Reason == modifier, e.g. "Ctrl+Shift"
         public string Mode;                // type | paste (what was actually used)
         public int Chars;                  // characters delivered
@@ -577,6 +586,9 @@ namespace TerminalDesign.Voice
             string held = WaitModifiersReleased(env, hotkeyVk, graceMs);
             if (env.Foreground() != target) { r.Outcome = "blocked"; r.Reason = "focus"; return r; }
             if (held.Length > 0) { r.Outcome = "blocked"; r.Reason = "modifier"; r.Keys = held; return r; }
+            // Windows (UIPI) silently drops input sent to an admin window: SendInput would report
+            // success and the text would be lost. Do not try; keep the text for manual copy.
+            if (env.TargetElevated(target)) { r.Outcome = "blocked"; r.Reason = "elevated"; return r; }
 
             if (r.Mode == "paste")
             {
@@ -708,14 +720,15 @@ namespace TerminalDesign.Voice
 
         /// <summary>
         /// Best effort: Windows (UIPI) silently drops SendInput aimed at a window of a more
-        /// privileged (admin) process. Returns true when the focused window seems elevated and we are not.
+        /// privileged (admin) process. Returns true when `hwnd` seems elevated and we are not.
         /// </summary>
-        public static bool TargetLooksElevated()
+        public static bool WindowLooksElevated(IntPtr hwnd)
         {
             bool known;
+            if (hwnd == IntPtr.Zero) return false;
             if (IsElevated(Native.GetCurrentProcess(), out known)) return false;
             uint pid;
-            Native.GetWindowThreadProcessId(Native.GetForegroundWindow(), out pid);
+            Native.GetWindowThreadProcessId(hwnd, out pid);
             if (pid == 0) return false;
             IntPtr p = Native.OpenProcess(0x1000 /* PROCESS_QUERY_LIMITED_INFORMATION */, false, pid);
             if (p == IntPtr.Zero) return false;
@@ -735,93 +748,88 @@ namespace TerminalDesign.Voice
         }
     }
 
-    /// <summary>Small borderless topmost label that never activates (keeps focus in the user's window).</summary>
-    internal sealed class Overlay : Form
+    // ---- floating UI: per-pixel alpha windows that never take focus ----------------------
+
+    /// <summary>Display scale. The host is DPI aware so the button and the toast stay crisp.</summary>
+    internal static class UiScale
     {
-        readonly Label label;
+        public static float Factor = 1f;
 
-        public Overlay()
+        public static void Init()
         {
-            FormBorderStyle = FormBorderStyle.None;
-            ShowInTaskbar = false;
-            TopMost = true;
-            StartPosition = FormStartPosition.Manual;
-            BackColor = Color.FromArgb(24, 24, 32);
-            Opacity = 0.92;
-            Size = new Size(300, 38);
-            label = new Label
+            try
             {
-                Dock = DockStyle.Fill, ForeColor = Color.White, TextAlign = ContentAlignment.MiddleCenter,
-                Font = new Font("Segoe UI", 10f, FontStyle.Bold)
-            };
-            Controls.Add(label);
-        }
-
-        protected override bool ShowWithoutActivation { get { return true; } }
-
-        protected override CreateParams CreateParams
-        {
-            get
-            {
-                var cp = base.CreateParams;
-                cp.ExStyle |= 0x08000000 /* WS_EX_NOACTIVATE */ | 0x00000080 /* WS_EX_TOOLWINDOW */ | 0x00000008 /* WS_EX_TOPMOST */;
-                return cp;
+                using (var g = Graphics.FromHwnd(IntPtr.Zero)) Factor = Math.Max(1f, g.DpiX / 96f);
             }
+            catch { Factor = 1f; }
         }
 
-        public void ShowText(string text, Color accent)
+        public static int Px(float logical, float scale) { return (int)Math.Round(logical * scale); }
+    }
+
+    /// <summary>UpdateLayeredWindow plumbing: shows a 32-bit ARGB bitmap with smooth (anti-aliased) edges.</summary>
+    internal static class Layered
+    {
+        [DllImport("user32.dll", SetLastError = true)]
+        static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, ref PT pptDst, ref SZ psize, IntPtr hdcSrc,
+            ref PT pptSrc, int crKey, ref BLEND pblend, int dwFlags);
+        [DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr hWnd);
+        [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+        [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr hDC);
+        [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr hdc);
+        [DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr hDC, IntPtr hObject);
+        [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr hObject);
+        [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+
+        [StructLayout(LayoutKind.Sequential)] struct PT { public int X, Y; }
+        [StructLayout(LayoutKind.Sequential)] struct SZ { public int cx, cy; }
+        [StructLayout(LayoutKind.Sequential, Pack = 1)] struct BLEND { public byte BlendOp, BlendFlags, SourceConstantAlpha, AlphaFormat; }
+
+        public static void Present(IntPtr hwnd, Bitmap bmp, Point location)
         {
-            label.Text = text;
-            label.ForeColor = accent;
-            var area = Screen.FromHandle(Native.GetForegroundWindow()).WorkingArea;
-            Location = new Point(area.Left + (area.Width - Width) / 2, area.Bottom - Height - 48);
-            if (!Visible) Show();
+            IntPtr screen = GetDC(IntPtr.Zero);
+            IntPtr mem = CreateCompatibleDC(screen);
+            IntPtr hbmp = IntPtr.Zero, old = IntPtr.Zero;
+            try
+            {
+                hbmp = bmp.GetHbitmap(Color.FromArgb(0)); // premultiplied 32-bit DIB
+                old = SelectObject(mem, hbmp);
+                var dst = new PT { X = location.X, Y = location.Y };
+                var size = new SZ { cx = bmp.Width, cy = bmp.Height };
+                var src = new PT();
+                var blend = new BLEND { BlendOp = 0 /* AC_SRC_OVER */, SourceConstantAlpha = 255, AlphaFormat = 1 /* AC_SRC_ALPHA */ };
+                UpdateLayeredWindow(hwnd, screen, ref dst, ref size, mem, ref src, 0, ref blend, 2 /* ULW_ALPHA */);
+            }
+            finally
+            {
+                if (old != IntPtr.Zero) SelectObject(mem, old);
+                if (hbmp != IntPtr.Zero) DeleteObject(hbmp);
+                DeleteDC(mem);
+                ReleaseDC(IntPtr.Zero, screen);
+            }
         }
     }
 
     /// <summary>
-    /// Floating round mic button. It never activates (WS_EX_NOACTIVATE, MA_NOACTIVATE on
-    /// WM_MOUSEACTIVATE), so clicking it leaves keyboard focus in the user's window, which is
-    /// what R1 captures as the insertion target. Left click toggles recording, drag moves it,
-    /// right click opens the menu.
+    /// Borderless window drawn with per-pixel alpha. It never activates (WS_EX_NOACTIVATE plus
+    /// MA_NOACTIVATE on WM_MOUSEACTIVATE), so clicking it leaves keyboard focus in the user's
+    /// window: that window stays the insertion target (R1). Fully transparent pixels let clicks
+    /// through to whatever is below.
     /// </summary>
-    internal sealed class MicButton : Form
+    internal class LayeredForm : Form
     {
         const int WM_MOUSEACTIVATE = 0x0021;
         const int MA_NOACTIVATE = 3;
-        const int DragThreshold = 4;
-        public const int Diameter = 44;
+        readonly bool topmost;
+        Rectangle shown;
 
-        public event Action Clicked;
-        public event Action<Point> Moved;
-        public ContextMenuStrip PopupMenu;
-        readonly ToolTip tip = new ToolTip { InitialDelay = 400, ShowAlways = true };
-
-        string state = "idle";
-        double elapsed, limit = 60;
-        Point downScreen, downLocation;
-        bool pressed, dragging;
-
-        static readonly Color Gray = Color.FromArgb(90, 90, 104);
-        static readonly Color Red = Color.FromArgb(220, 60, 60);
-        static readonly Color Amber = Color.FromArgb(222, 160, 40);
-
-        public MicButton()
+        public LayeredForm(bool topmost)
         {
+            this.topmost = topmost;
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
-            TopMost = true;
+            TopMost = topmost;
             StartPosition = FormStartPosition.Manual;
-            Size = new Size(Diameter, Diameter);
-            BackColor = Color.Magenta;
-            TransparencyKey = Color.Magenta; // only the circle is visible and clickable
-            DoubleBuffered = true;
-            Cursor = Cursors.Hand;
-            using (var path = new System.Drawing.Drawing2D.GraphicsPath())
-            {
-                path.AddEllipse(0, 0, Diameter, Diameter);
-                Region = new Region(path);
-            }
         }
 
         protected override bool ShowWithoutActivation { get { return true; } }
@@ -831,7 +839,8 @@ namespace TerminalDesign.Voice
             get
             {
                 var cp = base.CreateParams;
-                cp.ExStyle |= 0x08000000 /* WS_EX_NOACTIVATE */ | 0x00000080 /* WS_EX_TOOLWINDOW */ | 0x00000008 /* WS_EX_TOPMOST */;
+                cp.ExStyle |= 0x00080000 /* WS_EX_LAYERED */ | 0x08000000 /* WS_EX_NOACTIVATE */ | 0x00000080 /* WS_EX_TOOLWINDOW */;
+                if (topmost) cp.ExStyle |= 0x00000008 /* WS_EX_TOPMOST */;
                 return cp;
             }
         }
@@ -843,20 +852,524 @@ namespace TerminalDesign.Voice
             base.WndProc(ref m);
         }
 
-        public void SetState(string s, string tooltip)
+        protected override void OnPaintBackground(PaintEventArgs e) { /* drawn by UpdateLayeredWindow only */ }
+        protected override void OnPaint(PaintEventArgs e) { }
+
+        /// <summary>Screen rectangle of the last frame shown.</summary>
+        public Rectangle ShownRect { get { return shown; } }
+
+        protected void Present(Bitmap bmp, Point location)
         {
-            state = s;
-            if (s != "recording") elapsed = 0;
-            tip.SetToolTip(this, tooltip);
-            Invalidate();
+            IntPtr h = Handle; // creates the window if needed
+            shown = new Rectangle(location, bmp.Size);
+            if (Bounds != shown) SetBounds(location.X, location.Y, bmp.Width, bmp.Height);
+            Layered.Present(h, bmp, location);
+        }
+    }
+
+    /// <summary>What the mic button shows.</summary>
+    internal enum Look { Idle, Recording, Processing, Done, Blocked, Error }
+
+    /// <summary>One frame of the mic button (pure data, rendered by ButtonArt).</summary>
+    internal sealed class ButtonFrame
+    {
+        public Look Look = Look.Idle;
+        public bool Hover;
+        public double Phase;      // seconds since the look started (animations)
+        public double Level;      // microphone level 0..1 while recording
+        public double Progress;   // fraction of voice.maxSeconds used while recording
+        public bool Chip;         // copy chip visible
+        public bool ChipLeft;     // chip drawn on the left of the mic
+        public bool ChipHover;
+        public bool ChipDone;     // chip shows a check right after copying
+        public float Scale = 1f;
+    }
+
+    /// <summary>
+    /// Geometry of the button window, in physical pixels: a 44 px mic circle, an optional 28 px
+    /// copy chip beside it, and a transparent margin for the shadow and the recording halo.
+    /// The "anchor" is the top-left corner of the mic circle on screen; it never moves when the
+    /// chip appears, so the button does not jump under the mouse.
+    /// </summary>
+    internal static class PillLayout
+    {
+        public const int Mic = 44, Chip = 28, Gap = 6, Margin = 10;
+
+        public static Size Canvas(bool chip, float s)
+        {
+            return new Size(UiScale.Px(Margin * 2 + Mic + (chip ? Chip + Gap : 0), s), UiScale.Px(Margin * 2 + Mic, s));
         }
 
-        public void SetElapsed(double seconds, double maxSeconds)
+        public static RectangleF LogicalMic(bool chip, bool chipLeft)
         {
-            elapsed = seconds;
-            limit = Math.Max(1, maxSeconds);
-            Invalidate();
+            return new RectangleF(Margin + (chip && chipLeft ? Chip + Gap : 0), Margin, Mic, Mic);
         }
+
+        public static RectangleF LogicalChip(bool chipLeft)
+        {
+            return new RectangleF(chipLeft ? Margin : Margin + Mic + Gap, Margin + (Mic - Chip) / 2f, Chip, Chip);
+        }
+
+        static Rectangle Scaled(RectangleF r, float s)
+        {
+            return new Rectangle(UiScale.Px(r.X, s), UiScale.Px(r.Y, s), UiScale.Px(r.Width, s), UiScale.Px(r.Height, s));
+        }
+
+        public static Rectangle MicRect(bool chip, bool chipLeft, float s) { return Scaled(LogicalMic(chip, chipLeft), s); }
+        public static Rectangle ChipRect(bool chipLeft, float s) { return Scaled(LogicalChip(chipLeft), s); }
+
+        /// <summary>Window position that puts the mic circle at `anchor`.</summary>
+        public static Point WindowLocation(Point anchor, bool chip, bool chipLeft, float s)
+        {
+            var m = MicRect(chip, chipLeft, s);
+            return new Point(anchor.X - m.X, anchor.Y - m.Y);
+        }
+
+        /// <summary>Chip goes on the side with more room: left when the button is on the right half of its screen.</summary>
+        public static bool ChipOnLeft(Point anchor, Rectangle workArea, float s)
+        {
+            return anchor.X + UiScale.Px(Mic, s) / 2 > workArea.Left + workArea.Width / 2;
+        }
+
+        static bool InCircle(Point p, Rectangle r)
+        {
+            double cx = r.X + r.Width / 2.0, cy = r.Y + r.Height / 2.0, rad = r.Width / 2.0;
+            double dx = p.X + 0.5 - cx, dy = p.Y + 0.5 - cy;
+            return dx * dx + dy * dy <= rad * rad;
+        }
+
+        /// <summary>"mic", "copy" or null (shadow / halo / empty corner) for a point in window coordinates.</summary>
+        public static string HitTest(Point p, bool chip, bool chipLeft, float s)
+        {
+            if (InCircle(p, MicRect(chip, chipLeft, s))) return "mic";
+            if (chip && InCircle(p, ChipRect(chipLeft, s))) return "copy";
+            return null;
+        }
+    }
+
+    /// <summary>Drawing of the mic button and the toast. Pure: frame in, bitmap out (testable offscreen).</summary>
+    internal static class ButtonArt
+    {
+        static readonly Color GraphiteTop = Color.FromArgb(46, 46, 54), GraphiteBottom = Color.FromArgb(28, 28, 33);
+        static readonly Color GraphiteHoverTop = Color.FromArgb(60, 60, 70), GraphiteHoverBottom = Color.FromArgb(36, 36, 43);
+        public static readonly Color RecordTop = Color.FromArgb(246, 94, 100), RecordBottom = Color.FromArgb(214, 52, 66);
+        public static readonly Color DoneTop = Color.FromArgb(70, 196, 130), DoneBottom = Color.FromArgb(38, 154, 98);
+        public static readonly Color KeptTop = Color.FromArgb(247, 190, 80), KeptBottom = Color.FromArgb(218, 146, 38);
+        public static readonly Color ErrorRing = Color.FromArgb(255, 96, 102);
+
+        /// <summary>Peak sample (0..32767) of the last 100 ms -> 0..1 level for the waveform and halo.</summary>
+        public static double LevelFromPeak(int peak)
+        {
+            double x = Math.Max(0, Math.Min(32767, peak)) / 32767.0;
+            return Math.Min(1.0, Math.Sqrt(x) * 1.4);
+        }
+
+        static System.Drawing.Drawing2D.GraphicsPath RoundRect(float x, float y, float w, float h, float r)
+        {
+            var p = new System.Drawing.Drawing2D.GraphicsPath();
+            float d = r * 2;
+            p.AddArc(x, y, d, d, 180, 90);
+            p.AddArc(x + w - d, y, d, d, 270, 90);
+            p.AddArc(x + w - d, y + h - d, d, d, 0, 90);
+            p.AddArc(x, y + h - d, d, d, 90, 90);
+            p.CloseFigure();
+            return p;
+        }
+
+        static Pen RoundPen(Color c, float w)
+        {
+            var p = new Pen(c, w);
+            p.StartCap = System.Drawing.Drawing2D.LineCap.Round;
+            p.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+            p.LineJoin = System.Drawing.Drawing2D.LineJoin.Round;
+            return p;
+        }
+
+        static void Shadow(Graphics g, RectangleF r, bool round, float radius)
+        {
+            // Soft, slightly lowered shadow: a few low-alpha layers growing outwards.
+            for (int k = 5; k >= 1; k--)
+            {
+                var s = RectangleF.Inflate(r, k * 0.9f, k * 0.9f);
+                s.Offset(0, 1.6f);
+                using (var b = new SolidBrush(Color.FromArgb(9 + (5 - k) * 3, 0, 0, 0)))
+                {
+                    if (round) g.FillEllipse(b, s);
+                    else using (var path = RoundRect(s.X, s.Y, s.Width, s.Height, radius + k * 0.9f)) g.FillPath(b, path);
+                }
+            }
+        }
+
+        static void Disc(Graphics g, RectangleF r, Color top, Color bottom, int borderAlpha)
+        {
+            using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(r, top, bottom, 90f)) g.FillEllipse(b, r);
+            using (var pen = new Pen(Color.FromArgb(borderAlpha, 255, 255, 255), 1f)) g.DrawEllipse(pen, RectangleF.Inflate(r, -0.5f, -0.5f));
+        }
+
+        static void MicGlyph(Graphics g, PointF c, int alpha)
+        {
+            var white = Color.FromArgb(alpha, 255, 255, 255);
+            using (var b = new SolidBrush(white))
+            using (var pen = RoundPen(white, 1.9f))
+            using (var capsule = RoundRect(c.X - 4.5f, c.Y - 11.5f, 9f, 15.5f, 4.5f))
+            {
+                g.FillPath(b, capsule);
+                g.DrawArc(pen, c.X - 8f, c.Y - 6.5f, 16f, 13.5f, 0, 180);
+                g.DrawLine(pen, c.X, c.Y + 7f, c.X, c.Y + 10.5f);
+                g.DrawLine(pen, c.X - 4.5f, c.Y + 10.5f, c.X + 4.5f, c.Y + 10.5f);
+            }
+        }
+
+        static readonly float[] BarWeight = { 0.55f, 0.85f, 1f, 0.85f, 0.55f };
+
+        static void Waveform(Graphics g, PointF c, double level, double phase)
+        {
+            using (var pen = RoundPen(Color.White, 3.2f))
+            {
+                for (int i = 0; i < 5; i++)
+                {
+                    double wobble = 0.6 + 0.4 * Math.Sin(phase * 9.0 + i * 1.7);
+                    float h = (float)(3.5 + 15.0 * Math.Min(1.0, level * BarWeight[i] * wobble));
+                    float x = c.X + (i - 2) * 5.6f;
+                    g.DrawLine(pen, x, c.Y - h / 2f, x, c.Y + h / 2f);
+                }
+            }
+        }
+
+        static void Check(Graphics g, PointF c, float scale, double t, float width)
+        {
+            var a = new PointF(c.X - 7f * scale, c.Y + 0.5f * scale);
+            var b = new PointF(c.X - 2f * scale, c.Y + 5.5f * scale);
+            var d = new PointF(c.X + 8f * scale, c.Y - 5.5f * scale);
+            t = Math.Max(0, Math.Min(1, t));
+            using (var pen = RoundPen(Color.White, width))
+            {
+                // First stroke takes 35% of the draw-in, the long one the rest.
+                double t1 = Math.Min(1, t / 0.35);
+                g.DrawLine(pen, a, new PointF(a.X + (float)((b.X - a.X) * t1), a.Y + (float)((b.Y - a.Y) * t1)));
+                if (t > 0.35)
+                {
+                    double t2 = (t - 0.35) / 0.65;
+                    g.DrawLine(pen, b, new PointF(b.X + (float)((d.X - b.X) * t2), b.Y + (float)((d.Y - b.Y) * t2)));
+                }
+            }
+        }
+
+        static void KeptGlyph(Graphics g, PointF c)
+        {
+            // Clipboard: "the text is kept, ready to copy".
+            using (var pen = RoundPen(Color.White, 2f))
+            using (var board = RoundRect(c.X - 7f, c.Y - 8f, 14f, 17.5f, 3f))
+            using (var b = new SolidBrush(Color.White))
+            using (var clip = RoundRect(c.X - 3.8f, c.Y - 10.5f, 7.6f, 4.6f, 1.6f))
+            {
+                g.DrawPath(pen, board);
+                g.FillPath(b, clip);
+                g.DrawLine(pen, c.X - 3.5f, c.Y - 1f, c.X + 3.5f, c.Y - 1f);
+                g.DrawLine(pen, c.X - 3.5f, c.Y + 3.5f, c.X + 1.5f, c.Y + 3.5f);
+            }
+        }
+
+        static void CopyGlyph(Graphics g, PointF c, int alpha)
+        {
+            using (var back = RoundPen(Color.FromArgb(alpha * 6 / 10, 255, 255, 255), 1.6f))
+            using (var front = RoundPen(Color.FromArgb(alpha, 255, 255, 255), 1.6f))
+            using (var p1 = RoundRect(c.X - 5.5f, c.Y - 6.5f, 8f, 10f, 2f))
+            using (var p2 = RoundRect(c.X - 2.5f, c.Y - 3.5f, 8f, 10f, 2f))
+            using (var fill = new SolidBrush(GraphiteBottom))
+            {
+                g.DrawPath(back, p1);
+                g.FillPath(fill, p2);
+                g.DrawPath(front, p2);
+            }
+        }
+
+        public static Bitmap Render(ButtonFrame f)
+        {
+            float s = f.Scale <= 0 ? 1f : f.Scale;
+            var size = PillLayout.Canvas(f.Chip, s);
+            var bmp = new Bitmap(size.Width, size.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                g.Clear(Color.Transparent);
+                g.ScaleTransform(s, s);
+                if (f.Chip) DrawChip(g, PillLayout.LogicalChip(f.ChipLeft), f);
+                DrawMic(g, PillLayout.LogicalMic(f.Chip, f.ChipLeft), f);
+            }
+            return bmp;
+        }
+
+        static void DrawChip(Graphics g, RectangleF r, ButtonFrame f)
+        {
+            Shadow(g, r, true, 0);
+            var c = new PointF(r.X + r.Width / 2f, r.Y + r.Height / 2f);
+            if (f.ChipDone)
+            {
+                Disc(g, r, DoneTop, DoneBottom, 60);
+                Check(g, c, 0.62f, 1, 2.2f);
+                return;
+            }
+            Disc(g, r, f.ChipHover ? GraphiteHoverTop : GraphiteTop, f.ChipHover ? GraphiteHoverBottom : GraphiteBottom, 30);
+            CopyGlyph(g, c, f.ChipHover ? 255 : 220);
+        }
+
+        static void DrawMic(Graphics g, RectangleF r, ButtonFrame f)
+        {
+            var c = new PointF(r.X + r.Width / 2f, r.Y + r.Height / 2f);
+            if (f.Look == Look.Recording)
+            {
+                // Halo that breathes with the voice: bigger and brighter when louder.
+                double lv = Math.Max(0, Math.Min(1, f.Level));
+                float grow = (float)Math.Min(9.0, 2.5 + 6.0 * lv + 1.0 * Math.Sin(f.Phase * Math.PI * 1.8));
+                var halo = RectangleF.Inflate(r, grow, grow);
+                using (var path = new System.Drawing.Drawing2D.GraphicsPath())
+                {
+                    path.AddEllipse(halo);
+                    using (var pb = new System.Drawing.Drawing2D.PathGradientBrush(path))
+                    {
+                        pb.CenterColor = Color.FromArgb((int)(110 + 90 * lv), RecordBottom);
+                        pb.SurroundColors = new[] { Color.FromArgb(0, RecordBottom) };
+                        pb.FocusScales = new PointF(0.72f, 0.72f);
+                        g.FillEllipse(pb, halo);
+                    }
+                }
+            }
+            Shadow(g, r, true, 0);
+            switch (f.Look)
+            {
+                case Look.Recording:
+                    Disc(g, r, RecordTop, RecordBottom, 60);
+                    Waveform(g, c, f.Level, f.Phase);
+                    if (f.Progress >= 0.8)
+                    {
+                        // Last 20% of voice.maxSeconds: a thin ring shows the recording is about to stop.
+                        using (var pen = RoundPen(Color.FromArgb(220, 255, 255, 255), 2f))
+                            g.DrawArc(pen, RectangleF.Inflate(r, -2.5f, -2.5f), -90, (float)(360 * Math.Min(1, f.Progress)));
+                    }
+                    break;
+                case Look.Processing:
+                    Disc(g, r, GraphiteTop, GraphiteBottom, 30);
+                    MicGlyph(g, c, 120);
+                    using (var faint = new Pen(Color.FromArgb(36, 255, 255, 255), 2.2f))
+                        g.DrawEllipse(faint, RectangleF.Inflate(r, -4.5f, -4.5f));
+                    using (var arc = RoundPen(Color.FromArgb(235, 255, 255, 255), 2.4f))
+                        g.DrawArc(arc, RectangleF.Inflate(r, -4.5f, -4.5f), (float)((f.Phase * 400.0) % 360.0), 100f);
+                    break;
+                case Look.Done:
+                    Disc(g, r, DoneTop, DoneBottom, 60);
+                    Check(g, c, 1f, 0.3 + f.Phase / 0.2, 3f); // starts a third drawn: never a bare dot
+                    break;
+                case Look.Blocked:
+                    Disc(g, r, KeptTop, KeptBottom, 60);
+                    KeptGlyph(g, c);
+                    break;
+                case Look.Error:
+                    Disc(g, r, GraphiteTop, GraphiteBottom, 30);
+                    using (var ring = new Pen(ErrorRing, 2.2f)) g.DrawEllipse(ring, RectangleF.Inflate(r, -1.6f, -1.6f));
+                    using (var pen = RoundPen(Color.White, 3f)) g.DrawLine(pen, c.X, c.Y - 8.5f, c.X, c.Y + 2.5f);
+                    using (var dot = new SolidBrush(Color.White)) g.FillEllipse(dot, c.X - 1.9f, c.Y + 5.2f, 3.8f, 3.8f);
+                    break;
+                default:
+                    Disc(g, r, f.Hover ? GraphiteHoverTop : GraphiteTop, f.Hover ? GraphiteHoverBottom : GraphiteBottom, f.Hover ? 44 : 30);
+                    MicGlyph(g, c, 240);
+                    break;
+            }
+        }
+
+        public const int ToastMargin = 8;
+
+        /// <summary>Compact dark pill with a colored dot and one line of text.</summary>
+        public static Bitmap RenderToast(string text, Color accent, float s)
+        {
+            if (s <= 0) s = 1f;
+            using (var font = new Font("Segoe UI Semibold", 12.5f, FontStyle.Regular, GraphicsUnit.Pixel))
+            {
+                SizeF measured;
+                using (var probe = new Bitmap(1, 1))
+                using (var pg = Graphics.FromImage(probe))
+                {
+                    pg.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+                    measured = pg.MeasureString(text, font, 1000, StringFormat.GenericTypographic);
+                }
+                float h = 32f, padL = 30f, padR = 14f;
+                float w = (float)Math.Ceiling(padL + measured.Width + padR);
+                var bmp = new Bitmap(UiScale.Px(w + ToastMargin * 2, s), UiScale.Px(h + ToastMargin * 2, s), System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                using (var g = Graphics.FromImage(bmp))
+                {
+                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                    g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                    // Grayscale anti-aliasing: ClearType does not blend on a transparent surface.
+                    g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+                    g.Clear(Color.Transparent);
+                    g.ScaleTransform(s, s);
+                    var r = new RectangleF(ToastMargin, ToastMargin, w, h);
+                    Shadow(g, r, false, h / 2f);
+                    using (var path = RoundRect(r.X, r.Y, r.Width, r.Height, h / 2f))
+                    using (var b = new System.Drawing.Drawing2D.LinearGradientBrush(r, Color.FromArgb(246, 40, 40, 47), Color.FromArgb(246, 26, 26, 31), 90f))
+                    using (var border = new Pen(Color.FromArgb(30, 255, 255, 255), 1f))
+                    {
+                        g.FillPath(b, path);
+                        g.DrawPath(border, path);
+                    }
+                    using (var dot = new SolidBrush(accent)) g.FillEllipse(dot, r.X + 13f, r.Y + h / 2f - 4f, 8f, 8f);
+                    using (var tb = new SolidBrush(Color.FromArgb(236, 236, 241)))
+                        g.DrawString(text, font, tb, r.X + padL, r.Y + (h - measured.Height) / 2f - 0.5f, StringFormat.GenericTypographic);
+                }
+                return bmp;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Small status toast. Next to the mic button when it is on screen (so the eye stays in one
+    /// place), otherwise centered above the taskbar. Never takes focus.
+    /// </summary>
+    internal sealed class Overlay : LayeredForm
+    {
+        /// <summary>Screen rectangle of the visible mic button, or null when there is none.</summary>
+        public Func<Rectangle?> Beside;
+
+        public Overlay() : base(true) { }
+
+        string lastText;
+        Color lastAccent;
+        Rectangle? lastBeside;
+
+        public void ShowText(string text, Color accent)
+        {
+            float s = UiScale.Factor;
+            Rectangle? near = Beside != null ? Beside() : null;
+            // Called every 30 ms while recording: redraw only when something visible changed.
+            if (Visible && text == lastText && accent == lastAccent && near == lastBeside) return;
+            lastText = text; lastAccent = accent; lastBeside = near;
+            using (var bmp = ButtonArt.RenderToast(text, accent, s))
+            {
+                Rectangle? b = near;
+                Point loc;
+                if (b.HasValue)
+                {
+                    var area = Screen.FromRectangle(b.Value).WorkingArea;
+                    bool left = b.Value.Left + b.Value.Width / 2 > area.Left + area.Width / 2;
+                    int overlap = UiScale.Px(PillLayout.Margin + ButtonArt.ToastMargin - 6, s); // both margins are transparent
+                    int x = left ? b.Value.Left - bmp.Width + overlap : b.Value.Right - overlap;
+                    int y = b.Value.Top + (b.Value.Height - bmp.Height) / 2;
+                    x = Math.Max(area.Left, Math.Min(area.Right - bmp.Width, x));
+                    y = Math.Max(area.Top, Math.Min(area.Bottom - bmp.Height, y));
+                    loc = new Point(x, y);
+                }
+                else
+                {
+                    var area = Screen.FromHandle(Native.GetForegroundWindow()).WorkingArea;
+                    loc = new Point(area.Left + (area.Width - bmp.Width) / 2, area.Bottom - bmp.Height - UiScale.Px(40, s));
+                }
+                Present(bmp, loc);
+            }
+            if (!Visible) Show();
+        }
+    }
+
+    /// <summary>
+    /// Floating mic button (click to talk) with a copy chip. Left click on the mic toggles
+    /// recording, left click on the chip copies the last transcription, drag moves it, right
+    /// click opens the menu. Animations run only while recording, transcribing or confirming:
+    /// when idle it costs nothing.
+    /// </summary>
+    internal sealed class MicButton : LayeredForm
+    {
+        const int DragThreshold = 4;
+        public const int Diameter = PillLayout.Mic;
+
+        public event Action Clicked;
+        public event Action CopyClicked;
+        public event Action<Point> Moved;
+        public ContextMenuStrip PopupMenu;
+        readonly ToolTip tip = new ToolTip { InitialDelay = 450, ShowAlways = true };
+        readonly System.Windows.Forms.Timer anim = new System.Windows.Forms.Timer { Interval = 33 };
+        readonly System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
+
+        Look look = Look.Idle;
+        double lookSince, chipDoneAt = -10, level, progress;
+        bool chip, chipDone, hover, chipHover, pressed, dragging;
+        Point anchor, downScreen, downAnchor;
+        string downPart, micTip = "", tipShown;
+
+        public MicButton(bool topmost) : base(topmost)
+        {
+            anim.Tick += delegate { Redraw(); };
+        }
+
+        double Now { get { return clock.Elapsed.TotalSeconds; } }
+        float S { get { return UiScale.Factor; } }
+
+        /// <summary>Top-left of the mic circle on screen (what button.json stores).</summary>
+        public Point MicAnchor { get { return anchor; } }
+        public Look CurrentLook { get { return look; } }
+        public bool ChipVisible { get { return chip; } }
+
+        public void Place(Point a) { anchor = a; Redraw(); }
+
+        public void SetLook(Look l, string tooltip)
+        {
+            if (l != look) { look = l; lookSince = Now; }
+            if (l != Look.Recording) { level = 0; progress = 0; }
+            micTip = tooltip ?? "";
+            Redraw();
+        }
+
+        /// <summary>Live microphone level (0..1) and fraction of the time limit, while recording.</summary>
+        public void SetLevel(double lv, double prog)
+        {
+            level = Math.Max(lv, level * 0.82); // fast attack, smooth release
+            progress = prog;
+        }
+
+        public void SetChip(bool on)
+        {
+            if (chip == on) return;
+            chip = on;
+            if (!on) { chipDone = false; chipHover = false; }
+            Redraw();
+        }
+
+        public void FlashChipDone()
+        {
+            if (!chip) return;
+            chipDone = true;
+            chipDoneAt = Now;
+            Redraw();
+        }
+
+        bool ChipLeft()
+        {
+            int m = UiScale.Px(Diameter, S);
+            var area = Screen.FromPoint(new Point(anchor.X + m / 2, anchor.Y + m / 2)).WorkingArea;
+            return PillLayout.ChipOnLeft(anchor, area, S);
+        }
+
+        bool NeedsAnimation()
+        {
+            return look == Look.Recording || look == Look.Processing || (look == Look.Done && Now - lookSince < 0.3) || chipDone;
+        }
+
+        void Redraw()
+        {
+            if (IsDisposed) return;
+            if (chipDone && Now - chipDoneAt > 1.2) chipDone = false;
+            bool left = ChipLeft();
+            var f = new ButtonFrame
+            {
+                Look = look, Hover = hover, Phase = Now - lookSince, Level = level, Progress = progress,
+                Chip = chip, ChipLeft = left, ChipHover = chipHover, ChipDone = chipDone, Scale = S,
+            };
+            using (var bmp = ButtonArt.Render(f)) Present(bmp, PillLayout.WindowLocation(anchor, chip, left, S));
+            anim.Enabled = NeedsAnimation();
+            string want = chipHover ? (chipDone ? "Copiado" : "Copiar a última transcrição") : micTip;
+            if (want != tipShown) { tip.SetToolTip(this, want); tipShown = want; }
+        }
+
+        string Hit(Point p) { return PillLayout.HitTest(p, chip, ChipLeft(), S); }
 
         protected override void OnMouseDown(MouseEventArgs e)
         {
@@ -864,8 +1377,9 @@ namespace TerminalDesign.Voice
             {
                 pressed = true;
                 dragging = false;
+                downPart = Hit(e.Location);
                 downScreen = Control.MousePosition;
-                downLocation = Location;
+                downAnchor = anchor;
                 Capture = true;
             }
             base.OnMouseDown(e);
@@ -878,9 +1392,22 @@ namespace TerminalDesign.Voice
                 var p = Control.MousePosition;
                 int dx = p.X - downScreen.X, dy = p.Y - downScreen.Y;
                 if (!dragging && (Math.Abs(dx) > DragThreshold || Math.Abs(dy) > DragThreshold)) dragging = true;
-                if (dragging) Location = new Point(downLocation.X + dx, downLocation.Y + dy);
+                if (dragging) { anchor = new Point(downAnchor.X + dx, downAnchor.Y + dy); Redraw(); }
+            }
+            else
+            {
+                string part = Hit(e.Location);
+                bool h = part == "mic", ch = part == "copy";
+                Cursor = part != null ? Cursors.Hand : Cursors.Default;
+                if (h != hover || ch != chipHover) { hover = h; chipHover = ch; Redraw(); }
             }
             base.OnMouseMove(e);
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            if (hover || chipHover) { hover = false; chipHover = false; Redraw(); }
+            base.OnMouseLeave(e);
         }
 
         protected override void OnMouseUp(MouseEventArgs e)
@@ -889,8 +1416,9 @@ namespace TerminalDesign.Voice
             {
                 pressed = false;
                 Capture = false;
-                if (dragging) { if (Moved != null) Moved(Location); }
-                else if (Clicked != null) Clicked();
+                if (dragging) { if (Moved != null) Moved(anchor); }
+                else if (downPart == "mic" && Hit(e.Location) == "mic") { if (Clicked != null) Clicked(); }
+                else if (downPart == "copy" && Hit(e.Location) == "copy") { if (CopyClicked != null) CopyClicked(); }
             }
             else if (e.Button == MouseButtons.Right && PopupMenu != null)
             {
@@ -899,47 +1427,26 @@ namespace TerminalDesign.Voice
             base.OnMouseUp(e);
         }
 
-        protected override void OnPaint(PaintEventArgs e)
+        protected override void Dispose(bool disposing)
         {
-            var g = e.Graphics;
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            Color fill = state == "recording" ? Red : state == "processing" || state == "blocked" ? Amber : Gray;
-            using (var b = new SolidBrush(fill)) g.FillEllipse(b, 1, 1, Diameter - 2, Diameter - 2);
-
-            if (state == "recording")
-            {
-                // Elapsed-time ring (fraction of maxSeconds) plus a soft pulse once per second.
-                float frac = (float)Math.Min(1.0, elapsed / limit);
-                using (var ring = new Pen(Color.White, 3f)) g.DrawArc(ring, 3, 3, Diameter - 7, Diameter - 7, -90, Math.Max(4f, 360f * frac));
-                int alpha = (int)(70 + 60 * Math.Abs(Math.Sin(elapsed * Math.PI)));
-                using (var pulse = new Pen(Color.FromArgb(alpha, Color.White), 1.5f)) g.DrawEllipse(pulse, 7, 7, Diameter - 15, Diameter - 15);
-            }
-
-            // Microphone glyph: capsule, cradle arc and stand.
-            using (var w = new SolidBrush(Color.White))
-            using (var pen = new Pen(Color.White, 2f))
-            using (var capsule = new System.Drawing.Drawing2D.GraphicsPath())
-            {
-                float cx = Diameter / 2f, top = 11, cw = 8, ch = 14;
-                capsule.AddArc(cx - cw / 2, top, cw, cw, 180, 180);
-                capsule.AddArc(cx - cw / 2, top + ch - cw, cw, cw, 0, 180);
-                capsule.CloseFigure();
-                g.FillPath(w, capsule);
-                g.DrawArc(pen, cx - 8, top + 4, 16, 14, 0, 180);
-                g.DrawLine(pen, cx, top + 18, cx, top + 22);
-                g.DrawLine(pen, cx - 4, top + 22, cx + 4, top + 22);
-            }
+            if (disposing) { anim.Dispose(); tip.Dispose(); }
+            base.Dispose(disposing);
         }
 
         /// <summary>Saved position if it is still on a screen, otherwise bottom right of the primary screen.</summary>
         public static Point ResolvePosition(Point? saved, Rectangle[] workAreas, Rectangle primary)
         {
+            return ResolvePosition(saved, workAreas, primary, Diameter);
+        }
+
+        public static Point ResolvePosition(Point? saved, Rectangle[] workAreas, Rectangle primary, int size)
+        {
             if (saved.HasValue)
             {
-                var r = new Rectangle(saved.Value, new Size(Diameter, Diameter));
+                var r = new Rectangle(saved.Value, new Size(size, size));
                 foreach (var a in workAreas) if (a.Contains(r)) return saved.Value;
             }
-            return new Point(primary.Right - Diameter - 24, primary.Bottom - Diameter - 96);
+            return new Point(primary.Right - size - size / 2, primary.Bottom - size - size * 2);
         }
 
         /// <summary>Parse {"x":N,"y":N}; null when missing or invalid.</summary>
@@ -952,10 +1459,62 @@ namespace TerminalDesign.Voice
             catch { return null; }
         }
 
+        /// <summary>{"hidden":true} in button.json: the user hid the button from its menu.</summary>
+        public static bool ParseHidden(string json)
+        {
+            if (string.IsNullOrEmpty(json)) return false;
+            var d = Protocol.Parse(json);
+            object v;
+            return d != null && d.TryGetValue("hidden", out v) && v is bool && (bool)v;
+        }
+
         public static string FormatPosition(Point p)
         {
+            return FormatPosition(p, false);
+        }
+
+        public static string FormatPosition(Point p, bool hidden)
+        {
             return "{\"x\":" + p.X.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                + ",\"y\":" + p.Y.ToString(System.Globalization.CultureInfo.InvariantCulture) + "}\n";
+                + ",\"y\":" + p.Y.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + (hidden ? ",\"hidden\":true" : "") + "}\n";
+        }
+    }
+
+    /// <summary>
+    /// How long a transient look stays before the button returns to "ready". Pure, for tests.
+    /// Recording and transcribing stay until the work ends; idle has no timeout.
+    /// </summary>
+    internal static class LookPlan
+    {
+        public static Look For(string state)
+        {
+            switch (state)
+            {
+                case "recording": return Look.Recording;
+                case "processing": return Look.Processing;
+                case "done": return Look.Done;
+                case "blocked": return Look.Blocked;
+                case "error": return Look.Error;
+                default: return Look.Idle;
+            }
+        }
+
+        public static int RevertMs(string state)
+        {
+            switch (state)
+            {
+                case "done": return 1500;
+                case "blocked": return 6000;
+                case "error": return 3500;
+                default: return 0;
+            }
+        }
+
+        /// <summary>The copy chip shows when there is a transcription and nothing is being recorded or transcribed.</summary>
+        public static bool ChipVisible(string state, bool hasText)
+        {
+            return hasText && state != "recording" && state != "processing";
         }
     }
 
@@ -976,8 +1535,12 @@ namespace TerminalDesign.Voice
         static string mode, trigger, insertMode, outDir, deviceSpec, hotkeyLabel;
         static uint modifiers, vk;
         static int maxSeconds, seconds;
-        static bool useOverlay, useTray, useButton;
+        static bool useOverlay, useTray, useButton, topmost;
         static string stateDir;
+        static bool buttonHidden;
+        static string uiState = "idle";
+        static System.Windows.Forms.Timer revert, chipTimer;
+        const int ChipVisibleMs = 60000;
 
         static MessageWindow win;
         static MicButton button;
@@ -1004,7 +1567,7 @@ namespace TerminalDesign.Voice
         // insertion per finished recording (claimed once by a `type` command).
         static IntPtr recTarget;
         static readonly PendingTargets pending = new PendingTargets();
-        // Last transcription that could not be inserted; offered for manual copy (memory only).
+        // Last transcription of this session, inserted or not; offered for manual copy (memory only).
         static string lastText;
         static MenuItem copyItem;
 
@@ -1017,10 +1580,18 @@ namespace TerminalDesign.Voice
             int maxSeconds_, int seconds_, string device_, string insertMode_, string outDir_, bool overlay_, bool tray_,
             bool button_, string stateDir_)
         {
+            return Run(mode_, modifiers_, vk_, hotkeyLabel_, trigger_, maxSeconds_, seconds_, device_, insertMode_, outDir_,
+                overlay_, tray_, button_, stateDir_, true);
+        }
+
+        public static int Run(string mode_, uint modifiers_, uint vk_, string hotkeyLabel_, string trigger_,
+            int maxSeconds_, int seconds_, string device_, string insertMode_, string outDir_, bool overlay_, bool tray_,
+            bool button_, string stateDir_, bool topmost_)
+        {
             mode = mode_; modifiers = modifiers_; vk = vk_; hotkeyLabel = hotkeyLabel_; trigger = trigger_;
             maxSeconds = Math.Max(1, maxSeconds_); seconds = Math.Max(1, seconds_); deviceSpec = device_;
             insertMode = insertMode_; outDir = outDir_; useOverlay = overlay_; useTray = tray_;
-            useButton = button_ && mode == "listen"; stateDir = stateDir_;
+            useButton = button_ && mode == "listen"; stateDir = stateDir_; topmost = topmost_;
             ctrl = new RecordController(trigger);
             Protocol.Init();
 
@@ -1034,10 +1605,30 @@ namespace TerminalDesign.Voice
             catch (Exception e) { Protocol.Emit("error", "code", "device", "message", e.Message); return 4; }
 
             Directory.CreateDirectory(outDir);
+            // Crisp button and toast on scaled displays (125%, 150%...). Must run before any window exists.
+            try { Layered.SetProcessDPIAware(); } catch { }
+            UiScale.Init();
             Application.EnableVisualStyles();
             win = new MessageWindow();
             IntPtr handle = win.Handle; // forces window creation without showing it
-            if (useOverlay) { overlay = new Overlay(); IntPtr oh = overlay.Handle; }
+            if (useOverlay)
+            {
+                overlay = new Overlay();
+                overlay.Beside = delegate
+                {
+                    if (button == null || !button.Visible) return (Rectangle?)null;
+                    return button.ShownRect;
+                };
+                IntPtr oh = overlay.Handle;
+            }
+            revert = new System.Windows.Forms.Timer();
+            revert.Tick += delegate
+            {
+                revert.Stop();
+                if (uiState == "done" || uiState == "blocked" || uiState == "error") SetState("idle", null);
+            };
+            chipTimer = new System.Windows.Forms.Timer { Interval = ChipVisibleMs };
+            chipTimer.Tick += delegate { chipTimer.Stop(); if (button != null) button.SetChip(false); };
             if (useTray) SetupTray();
 
             poll = new System.Windows.Forms.Timer { Interval = 30 };
@@ -1078,6 +1669,7 @@ namespace TerminalDesign.Voice
             if (recorder != null) { try { recorder.Stop(); } catch { } recorder = null; }
             if (fgHook != IntPtr.Zero) { Native.UnhookWinEvent(fgHook); fgHook = IntPtr.Zero; }
             if (button != null) { try { button.Close(); button.Dispose(); } catch { } button = null; }
+            if (overlay != null) { try { overlay.Close(); overlay.Dispose(); } catch { } overlay = null; }
             if (tray != null) { tray.Visible = false; tray.Dispose(); tray = null; }
             foreach (var ic in icons.Values) { try { Native.DestroyIcon(ic.Handle); } catch { } }
             icons.Clear();
@@ -1113,6 +1705,23 @@ namespace TerminalDesign.Voice
             if (cmd == "quit") { Application.ExitThread(); return; }
             if (cmd == "state") { SetState(Str(msg, "state") ?? "idle", Str(msg, "message")); return; }
             if (cmd == "copy") { CopyLast(); return; }
+            if (cmd == "keep")
+            {
+                // voice.autoInsert = false: never type. Release the target, offer the text to copy.
+                IntPtr ignoredTarget;
+                int kid = Int(msg, "id");
+                if (!pending.Take(kid, out ignoredTarget))
+                {
+                    Protocol.Emit("warn", "code", "duplicate", "id", kid, "message", "pedido repetido ignorado");
+                    return;
+                }
+                lastText = Str(msg, "text") ?? "";
+                SetCopyEnabled(true);
+                Protocol.Emit("kept", "id", kid, "chars", lastText.Length);
+                SetState("done", "Texto pronto: clique em copiar");
+                OfferCopy();
+                return;
+            }
             if (cmd == "drop")
             {
                 // Nothing to insert for this recording (silence, nothing recognized, error).
@@ -1133,9 +1742,6 @@ namespace TerminalDesign.Voice
                     return;
                 }
                 lastText = text;
-                if (env.Foreground() == target && Typist.TargetLooksElevated())
-                    Protocol.Emit("warn", "code", "elevated",
-                        "message", "a janela em foco parece rodar como administrador; o Windows pode bloquear a digitação");
                 InsertResult r;
                 try { r = Typist.Insert(text, how, target, (int)vk, env, Typist.GraceMs); }
                 catch (Exception e)
@@ -1144,20 +1750,30 @@ namespace TerminalDesign.Voice
                     Protocol.Emit("error", "code", "type", "message", e.Message);
                 }
                 if (r.Warning != null) Protocol.Emit("warn", "code", "clipboard", "message", r.Warning);
+                // Inserted or not, the last transcription stays available for copying (memory only).
+                SetCopyEnabled(true);
                 if (r.Outcome == "typed")
                 {
-                    lastText = null;
-                    SetCopyEnabled(false);
                     Protocol.Emit("typed", "id", id, "chars", r.Chars, "requested", r.Requested, "insertMode", r.Mode);
-                    SetState("idle", null);
+                    SetState("done", null);
+                    OfferCopy();
                     return;
                 }
-                // Blocked or interrupted: keep the text for manual copy and say why.
-                SetCopyEnabled(true);
+                // Blocked or interrupted: say why; the text is ready to copy.
                 Protocol.Emit("blocked", "id", id, "outcome", r.Outcome, "reason", r.Reason ?? "error", "keys", r.Keys ?? "",
                     "chars", r.Chars, "requested", r.Requested);
                 SetState("blocked", BlockedMessage(r));
+                OfferCopy();
             }
+        }
+
+        /// <summary>Show the copy chip next to the mic for a while (the menus always keep the copy item).</summary>
+        static void OfferCopy()
+        {
+            if (button == null || string.IsNullOrEmpty(lastText)) return;
+            button.SetChip(LookPlan.ChipVisible(uiState, true));
+            chipTimer.Stop();
+            chipTimer.Start();
         }
 
         static string BlockedMessage(InsertResult r)
@@ -1165,18 +1781,20 @@ namespace TerminalDesign.Voice
             string why = r.Reason == "focus" ? "a janela mudou"
                 : r.Reason == "modifier" ? "tecla pressionada (" + r.Keys + ")"
                 : r.Reason == "no-target" ? "nenhuma janela em foco"
+                : r.Reason == "elevated" ? "janela de administrador"
                 : "o Windows recusou a digitação";
             return (r.Outcome == "interrupted" ? "Inserção interrompida: " : "Inserção cancelada: ") + why + " · texto guardado";
         }
 
         static void CopyLast()
         {
-            if (string.IsNullOrEmpty(lastText)) { Protocol.Emit("warn", "code", "nothing", "message", "não há transcrição guardada para copiar"); return; }
+            if (string.IsNullOrEmpty(lastText)) { Protocol.Emit("warn", "code", "nothing", "message", "ainda não há transcrição para copiar"); return; }
             try
             {
                 env.ClipboardSetText(lastText);
                 Protocol.Emit("copied", "chars", lastText.Length);
-                SetState("idle", "Transcrição copiada");
+                if (button != null) button.FlashChipDone();
+                SetState("idle", "Copiado: cole com Ctrl+V");
             }
             catch (Exception e) { Protocol.Emit("error", "code", "copy", "message", e.Message); }
         }
@@ -1242,43 +1860,51 @@ namespace TerminalDesign.Voice
 
         static void SetupButton()
         {
-            button = new MicButton();
+            button = new MicButton(topmost);
             Point? saved = null;
-            try { string f = ButtonFile(); if (f != null && File.Exists(f)) saved = MicButton.ParsePosition(File.ReadAllText(f)); } catch { }
+            string json = null;
+            try { string f = ButtonFile(); if (f != null && File.Exists(f)) json = File.ReadAllText(f); } catch { }
+            saved = MicButton.ParsePosition(json);
+            // Hidden is remembered only when the tray icon exists to bring the button back.
+            buttonHidden = useTray && MicButton.ParseHidden(json);
             var areas = new List<Rectangle>();
             foreach (var s in Screen.AllScreens) areas.Add(s.WorkingArea);
-            button.Location = MicButton.ResolvePosition(saved, areas.ToArray(), Screen.PrimaryScreen.WorkingArea);
+            button.Place(MicButton.ResolvePosition(saved, areas.ToArray(), Screen.PrimaryScreen.WorkingArea, UiScale.Px(MicButton.Diameter, UiScale.Factor)));
             button.Clicked += delegate { OnClick("button"); };
-            button.Moved += delegate (Point p)
-            {
-                try
-                {
-                    string f = ButtonFile();
-                    if (f == null) return;
-                    Directory.CreateDirectory(stateDir);
-                    File.WriteAllText(f, MicButton.FormatPosition(p));
-                }
-                catch { /* position is a convenience only */ }
-            };
+            button.CopyClicked += delegate { CopyLast(); };
+            button.Moved += delegate (Point p) { SaveButtonState(); };
             var menu = new ContextMenuStrip();
-            buttonCopyItem = new ToolStripMenuItem("Copiar última transcrição não inserida", null, delegate { CopyLast(); }) { Enabled = false };
+            buttonCopyItem = new ToolStripMenuItem("Copiar última transcrição", null, delegate { CopyLast(); }) { Enabled = false };
             menu.Items.Add(buttonCopyItem);
-            menu.Items.Add("Esconder botão", null, delegate { ShowButton(false); });
+            menu.Items.Add(useTray ? "Esconder botão (volta pelo ícone da bandeja)" : "Esconder botão até reiniciar a voz", null, delegate { ShowButton(false); });
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("Sair", null, delegate
+            menu.Items.Add("Sair da digitação por voz", null, delegate
             {
                 Protocol.Emit("quit", "reason", "button");
                 Application.ExitThread();
             });
             button.PopupMenu = menu;
-            ShowButton(true);
+            ShowButton(!buttonHidden);
+        }
+
+        static void SaveButtonState()
+        {
+            try
+            {
+                string f = ButtonFile();
+                if (f == null || button == null) return;
+                Directory.CreateDirectory(stateDir);
+                File.WriteAllText(f, MicButton.FormatPosition(button.MicAnchor, buttonHidden));
+            }
+            catch { /* position is a convenience only */ }
         }
 
         static void ShowButton(bool show)
         {
             if (button == null) return;
-            if (show) button.Show(); else button.Hide();
+            if (show) { button.Show(); button.Place(button.MicAnchor); } else button.Hide();
             if (showButtonItem != null) showButtonItem.Enabled = !show;
+            if (buttonHidden != !show) { buttonHidden = !show; SaveButtonState(); }
         }
 
         static void SetCopyEnabled(bool on)
@@ -1302,6 +1928,7 @@ namespace TerminalDesign.Voice
             }
             recStart = DateTime.UtcNow;
             ctrl.Started(source, clock.ElapsedMilliseconds);
+            if (button != null) button.SetChip(false);
             // R1: text may only go back to this window. A click on our button keeps the user's
             // window in the foreground; anything of ours or the taskbar falls back to the last
             // external foreground window; zero means the insertion will be blocked (no-target).
@@ -1322,13 +1949,13 @@ namespace TerminalDesign.Voice
                 StopRecording("release");
                 return;
             }
-            if (button != null) button.SetElapsed(elapsed, limit);
+            if (button != null) button.SetLevel(ButtonArt.LevelFromPeak(recorder.Level), elapsed / limit);
             if (overlay != null)
             {
                 string hint = mode == "record" ? "teste: " + (int)Math.Ceiling(limit - elapsed) + "s"
                     : ctrl.Source == "button" || ctrl.Source == "tray" ? "clique de novo para parar"
                     : trigger == "toggle" ? "atalho de novo para parar" : "solte para parar";
-                overlay.ShowText("● Gravando " + (int)elapsed + "s  ·  " + hint, Red);
+                overlay.ShowText("Gravando " + (int)elapsed + "s  ·  " + hint, Red);
             }
         }
 
@@ -1394,7 +2021,7 @@ namespace TerminalDesign.Voice
         {
             tray = new NotifyIcon { Icon = Dot("idle", Gray), Visible = true, Text = "Terminal-Design voz" };
             var menu = new ContextMenu();
-            copyItem = new MenuItem("Copiar última transcrição não inserida", delegate { CopyLast(); }) { Enabled = false };
+            copyItem = new MenuItem("Copiar última transcrição", delegate { CopyLast(); }) { Enabled = false };
             menu.MenuItems.Add(copyItem);
             menu.MenuItems.Add("Sair da digitação por voz", delegate
             {
@@ -1411,8 +2038,10 @@ namespace TerminalDesign.Voice
         static string ButtonTip(string state)
         {
             if (state == "recording") return "Gravando: clique para parar";
-            if (state == "processing") return "Transcrevendo…";
-            if (state == "blocked") return "texto guardado, clique com o botão direito para copiar";
+            if (state == "processing") return "Transcrevendo no seu computador…";
+            if (state == "done") return "Pronto";
+            if (state == "blocked") return "Texto guardado: use o botão de copiar ao lado";
+            if (state == "error") return "Algo deu errado: veja o terminal do td voice";
             return "Clique para falar (ou " + hotkeyLabel + ")";
         }
 
@@ -1420,27 +2049,40 @@ namespace TerminalDesign.Voice
 
         static void SetState(string state, string message)
         {
-            Color c = state == "recording" ? Red : state == "processing" || state == "blocked" ? Amber : state == "error" ? Red : Gray;
+            uiState = state;
+            if (revert != null)
+            {
+                revert.Stop();
+                int ms = LookPlan.RevertMs(state);
+                if (ms > 0) { revert.Interval = ms; revert.Start(); }
+            }
+            Color c = state == "recording" ? Red : state == "processing" || state == "blocked" ? Amber
+                : state == "error" ? Red : state == "done" ? Green : Gray;
             string tip;
             if (state == "recording") tip = "Gravando…";
             else if (state == "processing") tip = "Transcrevendo…";
-            else if (state == "blocked") tip = "Texto guardado: clique com o botão direito para copiar";
+            else if (state == "done") tip = "Pronto";
+            else if (state == "blocked") tip = "Texto guardado para copiar";
             else if (state == "error") tip = "Erro: " + (message ?? "");
             else tip = "Voz pronta (" + hotkeyLabel + ")";
             if (tray != null)
             {
-                tray.Icon = Dot(state == "error" ? "error" : state, c);
+                tray.Icon = Dot(state, c);
                 tray.Text = Clip("TD " + tip, 63); // NotifyIcon.Text throws above 63 chars
             }
-            if (button != null) button.SetState(state == "error" ? "idle" : state, ButtonTip(state));
+            if (button != null)
+            {
+                button.SetLook(LookPlan.For(state), state == "error" && message != null ? Clip("Erro: " + message, 120) : ButtonTip(state));
+                if (state == "recording" || state == "processing") button.SetChip(false);
+            }
             if (overlay == null) return;
             if (flash != null) { flash.Stop(); flash.Dispose(); flash = null; }
-            if (state == "processing") overlay.ShowText("◌ Transcrevendo…", Amber);
-            else if (state == "recording") overlay.ShowText("● Gravando…", Red);
+            if (state == "processing") overlay.ShowText("Transcrevendo no seu computador…", Amber);
+            else if (state == "recording") overlay.ShowText("Gravando…", Red);
             else if (message != null)
             {
                 // Short-lived notice (e.g. "nada reconhecido"), then hide.
-                overlay.ShowText(Clip(message, state == "blocked" ? 70 : 44), state == "error" ? Red : state == "blocked" ? Amber : Green);
+                overlay.ShowText(Clip(message, state == "blocked" ? 70 : 48), state == "error" ? Red : state == "blocked" ? Amber : Green);
                 // Blocked insertions stay visible longer so the user notices the text was kept.
                 var t = new System.Windows.Forms.Timer { Interval = state == "blocked" ? 6000 : 2200 };
                 t.Tick += delegate { t.Stop(); if (flash == t) { flash = null; overlay.Hide(); } t.Dispose(); };

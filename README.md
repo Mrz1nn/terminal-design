@@ -225,10 +225,13 @@ Para religar: `td config set update.auto notify`. Se você usa a versão clonada
 | `td voice` | Inicia a digitação por voz |
 | `td voice setup` | Baixa os arquivos da voz |
 | `td voice test` | Grava alguns segundos e mostra o texto, sem digitar nada |
+| `td voice autostart on` | Inicia a voz quando você entra no Windows (`off` desliga) |
 | `td doctor` | Diagnóstico completo |
 | `td uninstall` | Remove o Terminal-Design |
 
 Para tirar as cores de qualquer comando, use `--no-color` ou defina a variável `NO_COLOR`.
+
+Códigos de saída, iguais em todos os comandos: `0` deu certo, `1` o comando rodou e falhou (por exemplo, tema inexistente ou download que falhou) e `2` erro de uso (comando ou subcomando desconhecido, argumento faltando ou inválido). Bom para scripts.
 
 ## Status line do Claude Code
 
@@ -310,12 +313,15 @@ td voice         # inicia
 
 Com o `td voice` rodando, segure **Ctrl+Shift+F9**, fale e solte. O texto aparece onde está o cursor: CMD, PowerShell, Windows Terminal, VS Code e outros programas.
 
+Se preferir o mouse, use o botão flutuante de microfone: clique para falar e clique de novo para parar. Ele nunca tira o foco da sua janela, mostra quando está gravando, transcrevendo e quando terminou, e oferece um botão de copiar ao lado. Dá para arrastar, esconder, deixar de ficar por cima (`voice.topmost false`), desligar a inserção automática (`voice.autoInsert false`) e iniciar com o Windows (`td voice autostart on`).
+
 Proteções:
 
 1. O texto só vai para a janela que estava em foco quando você começou a falar. Se você trocar de janela, nada é digitado e o texto fica guardado.
 2. Se alguma tecla como Ctrl, Alt ou Shift estiver pressionada na hora de digitar, nada é digitado. Assim as letras nunca viram atalhos.
-3. Para copiar um texto guardado, aperte Enter no terminal do `td voice` ou use o menu do ícone perto do relógio.
-4. O áudio nunca sai do computador e é apagado assim que a transcrição termina.
+3. Janelas abertas como administrador não recebem texto: o Windows descartaria as teclas em silêncio, então o texto fica guardado para copiar.
+4. Para copiar a transcrição, clique no botão de copiar ao lado do microfone, aperte Enter no terminal do `td voice` ou use o menu do ícone perto do relógio.
+5. O áudio nunca sai do computador e é apagado assim que a transcrição termina.
 
 O atalho é configurável: `td config set voice.hotkey "Ctrl+Shift+F8"`. O idioma também: `td config set voice.language en`. O guia completo está em [docs/voice.md](docs/voice.md).
 
@@ -385,7 +391,7 @@ Rode `td claude status`. Se aparecer como não instalada, rode `td claude instal
 Eles só existem para os planos Pro, Max e Ultra, e chegam depois da primeira resposta da sessão.
 
 **A voz não digita em um programa.**
-Programas abertos como administrador não aceitam digitação de programas comuns. Abra o `td voice` também como administrador, ou abra o programa sem ser administrador.
+Programas abertos como administrador não aceitam digitação de programas comuns. O td voice percebe isso, não digita e deixa o texto pronto para copiar. Para digitar direto, abra o `td voice` também como administrador, ou abra o programa sem ser administrador.
 
 **Quero voltar para a versão anterior.**
 Rode `td update --rollback`.

@@ -94,6 +94,7 @@ export function doctor(ctx) {
 
 export default {
   id: 'update',
+  maxArgs: 0,
   summary: 'atualiza o Terminal-Design pelas releases do GitHub (com checksum e rollback)',
   usage: [
     'td update              verifica, mostra as novidades e pergunta antes de instalar',
