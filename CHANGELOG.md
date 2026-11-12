@@ -4,6 +4,11 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 ## [Não lançado]
 
+## [0.2.1] - 2026-11-11
+
+### Corrigido
+- A status line aceita JSON enviado pelo pipe do Windows PowerShell 5.1, que coloca um BOM no começo do texto. Antes aparecia "JSON inválido recebido do Claude Code".
+
 ## [0.2.0] - 2026-11-11
 
 ### Adicionado
