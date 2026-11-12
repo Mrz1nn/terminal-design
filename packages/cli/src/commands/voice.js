@@ -273,6 +273,10 @@ export default {
     if (!SUBCOMMANDS.includes(sub)) throw unknownSubcommand('voice', sub);
     const maxArgs = sub === 'autostart' ? 2 : 1;
     if (args.length > maxArgs) throw new UsageError(`argumento inesperado: td voice ${args.join(' ')}`);
+    // Usage errors come before the platform check, so they exit 2 on every OS.
+    if (sub === 'autostart' && args[1] && !['on', 'off', 'status'].includes(args[1])) {
+      throw new UsageError(`use td voice autostart on, off ou status (recebido: ${args[1]})`);
+    }
     if (sub === 'setup') return cmdSetup({ flags, ctx });
     const opts = resolveOptions({ config: ctx.config, overrides: overridesFrom(flags) });
     if (process.platform !== 'win32' && sub !== 'status') {
