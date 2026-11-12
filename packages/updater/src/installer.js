@@ -109,7 +109,15 @@ function parseCli(argv) {
   return o;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+/** True when this file is the script node was started with. Compares real paths: on macOS the
+ *  temp folder /var is a link to /private/var, and import.meta.url always holds the real path. */
+export function isMainModule(argv1 = process.argv[1], selfUrl = import.meta.url) {
+  if (!argv1) return false;
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  return real(argv1) === real(fileURLToPath(selfUrl));
+}
+
+if (isMainModule()) {
   const opts = parseCli(process.argv.slice(2));
   const paths = getPaths();
   try {

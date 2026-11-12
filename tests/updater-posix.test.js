@@ -230,3 +230,26 @@ describe('simulated macOS install', () => {
     assert.equal(fs.existsSync(p.binDir), false, 'bin deleted directly on posix (no deferral)');
   });
 });
+
+test('installer main-module check resolves links (macOS /var -> /private/var)', async (t) => {
+  const { isMainModule } = await import('../packages/updater/src/installer.js');
+  const { pathToFileURL } = await import('node:url');
+  const fsm = await import('node:fs');
+  const osm = await import('node:os');
+  const pm = await import('node:path');
+  const dir = fsm.mkdtempSync(pm.join(osm.tmpdir(), 'td-main-'));
+  t.after(() => fsm.rmSync(dir, { recursive: true, force: true }));
+  const real = pm.join(dir, 'real.js');
+  fsm.writeFileSync(real, '');
+  assert.equal(isMainModule(real, pathToFileURL(fsm.realpathSync(real)).href), true);
+  const link = pm.join(dir, 'link');
+  try {
+    fsm.symlinkSync(dir, link, 'junction');
+  } catch {
+    t.skip('symlinks not allowed here');
+    return;
+  }
+  assert.equal(isMainModule(pm.join(link, 'real.js'), pathToFileURL(fsm.realpathSync(real)).href), true, 'path through a link matches');
+  assert.equal(isMainModule(pm.join(dir, 'other.js'), pathToFileURL(real).href), false);
+  assert.equal(isMainModule(undefined, pathToFileURL(real).href), false);
+});
