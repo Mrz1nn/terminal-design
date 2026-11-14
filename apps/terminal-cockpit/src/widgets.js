@@ -244,7 +244,7 @@ export const LAYOUTS = {
   compact: [['model', 'context', 'limit5h', 'limit7d', 'git', 'update', 'tip']],
   cockpit: [
     ['model', 'context', 'limit5h', 'limit7d', 'spend'],
-    ['dir', 'git', 'pr', 'agent', 'changes', 'cost', 'duration', 'update', 'tip'],
+    ['dir', 'git', 'pr', 'agent', 'changes', 'update', 'tip'],
   ],
   full: [
     ['model', 'context', 'limit5h', 'limit7d', 'spend', 'monthly'],

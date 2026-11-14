@@ -4,6 +4,11 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 ## [Não lançado]
 
+## [0.3.4] - 2026-11-14
+
+### Mudado
+- Layout padrão (`cockpit`) mais limpo: sem o custo estimado `$ est.` e sem o tempo de sessão `⏱`. Os dois continuam no layout `full` (`/td layout completo`).
+
 ## [0.3.3] - 2026-11-12
 
 ### Adicionado

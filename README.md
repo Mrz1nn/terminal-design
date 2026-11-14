@@ -263,7 +263,7 @@ O Terminal-Design só mostra o que o Claude Code envia oficialmente para a statu
 | Limites de 5 horas e de 7 dias, com o tempo até renovar | Claude Code | Aparece nos planos Pro, Max e Ultra, depois da primeira resposta. Some quando passa a hora da renovação, até chegar um dado novo. |
 | Limite de gasto | Claude Code | Só aparece para quem usa um gateway corporativo |
 | Limite mensal da assinatura | Não existe | O Claude Code não informa esse dado, então ele nunca aparece como número |
-| Custo `$ est.` | Claude Code | Estimativa a preço de API. Não é cobrança. |
+| Custo `$ est.` | Claude Code | Estimativa a preço de API. Não é cobrança. Só no layout `completo`. |
 | Git | Seu computador | |
 
 Os itens sem dado somem. Para ver `n/d` no lugar deles: `td config set cockpit.showUnavailable true`.

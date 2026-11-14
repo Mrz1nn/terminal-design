@@ -95,8 +95,8 @@ td config set cockpit.hide '["cost"]'
 | `worktree` | Nome da worktree | `worktree` |
 | `agent` | Agente (`--agent`) | `agent.name` |
 | `changes` | Linhas adicionadas e removidas | `cost.total_lines_*` |
-| `cost` | `$ est.`: estimativa a preço de API, não é cobrança | `cost.total_cost_usd` |
-| `duration` | Duração da sessão | `cost.total_duration_ms` |
+| `cost` | `$ est.`: estimativa a preço de API, não é cobrança (só no layout `full`) | `cost.total_cost_usd` |
+| `duration` | Duração da sessão (só no layout `full`) | `cost.total_duration_ms` |
 | `session` | Nome da sessão | `session_name` |
 | `mode` | Modo vim, output style e permissão (`n/d`) | `vim`, `output_style` |
 | `cache` | Taxa de acerto do prompt cache e TTL | `prompt_cache` |

@@ -86,7 +86,7 @@ test('cockpit layout renders two grouped rows with real values', () => {
   const lines = out.split('\n');
   assert.equal(lines.length, 2);
   assert.match(lines[0], /^Opus 5\.5 medium think │ ctx .* 9% 94k\/1M │ 5h .* 36% ↻2h10m │ 7d .* 13%/);
-  assert.match(lines[1], /^proj\/src │ ⎇ main ✓ │ \+91 −10 │ \$0\.97 est\. │ ⏱ 10m$/);
+  assert.match(lines[1], /^proj\/src │ ⎇ main ✓ │ \+91 −10$/);
 });
 
 test('missing data is hidden by default and shown as n/d when asked', () => {

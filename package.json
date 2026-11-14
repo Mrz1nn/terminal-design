@@ -1,6 +1,6 @@
 {
   "name": "terminal-design",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Open source terminal cockpit for Windows: Claude Code status line, themes, and self-updater.",
   "license": "MIT",
   "type": "module",
